@@ -2,7 +2,7 @@
 
 **OpenFeature-native progressive delivery for safe, explainable, and low-latency feature releases.**
 
-> Status: specification and foundation. The architecture, domain invariants, and delivery plan are defined before implementation begins.
+> Status: M0 foundation in progress. The first executable Spring Boot application and reproducible Maven build are available.
 
 FlagForge is a multi-tenant platform that helps software teams decouple deployment from release. Teams can ship code behind feature flags, target selected users or organizations, perform deterministic percentage rollouts, understand every evaluation decision, and stop a risky release without redeploying an application.
 
@@ -194,7 +194,50 @@ See [TEST_STRATEGY.md](docs/TEST_STRATEGY.md) for the planned verification matri
 
 ## Current status
 
-The repository is in **Sprint 0 / foundation design**. It currently contains the product vision, architectural decisions, domain invariants, security baseline, testing strategy, and an issue-driven implementation plan. Runtime instructions will be added with the first executable vertical slice rather than documented speculatively.
+The repository is in **M0 / Foundation**. It contains the product specification and the first executable Control API application. PostgreSQL, Flyway, full architecture verification, and expanded quality gates remain tracked as separate M0 issues.
+
+## Quick start
+
+### Requirements
+
+- JDK 25.
+- No system Maven installation is required. The wrapper downloads Maven 3.9.11.
+- No database or external credential is required for the foundation application.
+
+### Verify the build
+
+Linux/macOS:
+
+```bash
+sh ./mvnw --batch-mode verify
+```
+
+Windows:
+
+```powershell
+.\mvnw.cmd --batch-mode verify
+```
+
+### Run the Control API
+
+Linux/macOS:
+
+```bash
+sh ./mvnw --projects apps/control-api spring-boot:run
+```
+
+Windows:
+
+```powershell
+.\mvnw.cmd --projects apps/control-api spring-boot:run
+```
+
+The initial operational endpoints are:
+
+```text
+GET http://localhost:8080/actuator/health
+GET http://localhost:8080/actuator/info
+```
 
 ## Documentation
 
@@ -210,4 +253,3 @@ The repository is in **Sprint 0 / foundation design**. It currently contains the
 ## License
 
 FlagForge is available under the [MIT License](LICENSE).
-
