@@ -1,0 +1,38 @@
+name: Feature proposal
+description: Propose a user outcome or technical capability
+title: "[Feature]: "
+labels:
+  - "type: feature"
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or job to be done
+      description: Describe the user or operational problem before proposing the solution.
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Desired outcome
+    validations:
+      required: true
+  - type: textarea
+    id: invariants
+    attributes:
+      label: Invariants and failure behavior
+      description: What must always remain true? How should failures degrade?
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+  - type: checkboxes
+    id: impact
+    attributes:
+      label: Impact areas
+      options:
+        - label: Tenant isolation or authorization
+        - label: Public API or SDK compatibility
+        - label: Consistency or caching
+        - label: Architecture decision required
+
