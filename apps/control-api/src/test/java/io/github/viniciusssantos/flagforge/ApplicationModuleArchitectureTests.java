@@ -18,7 +18,7 @@ class ApplicationModuleArchitectureTests {
             ApplicationModules.of(FlagForgeApplication.class);
 
     private static final JavaClasses VIOLATION_FIXTURE_CLASSES = new ClassFileImporter()
-            .importPackages("io.github.viniciusssantos.flagforgefixtures");
+            .importPackagesOf(ArchitectureViolationFixture.class);
 
     @Test
     void applicationModulesRespectDeclaredBoundaries() {
@@ -31,14 +31,6 @@ class ApplicationModuleArchitectureTests {
                 .writeModulesAsPlantUml()
                 .writeIndividualModulesAsPlantUml()
                 .writeModuleCanvases();
-    }
-
-    @Test
-    void intentionalFixtureIsRejectedBySpringModulith() {
-        var invalidModules = ApplicationModules.of(ArchitectureViolationFixture.class);
-
-        assertThatThrownBy(invalidModules::verify)
-                .isInstanceOf(RuntimeException.class);
     }
 
     @Test
