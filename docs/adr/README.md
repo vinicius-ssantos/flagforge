@@ -9,6 +9,7 @@ ADRs capture decisions that materially affect architecture, security, data owner
 | [0003](0003-immutable-versioned-snapshots.md) | Evaluate immutable versioned snapshots | Accepted |
 | [0004](0004-row-based-multitenancy.md) | Use row-based tenant isolation initially | Accepted |
 | [0005](0005-postgresql-source-of-truth-and-layered-cache.md) | Keep PostgreSQL authoritative and layer caches | Accepted |
+| [0006](0006-spring-data-jdbc-for-aggregate-persistence.md) | Use Spring Data JDBC for aggregate persistence | Accepted |
 
 ## ADR template
 
