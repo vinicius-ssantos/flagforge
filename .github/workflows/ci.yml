@@ -10,26 +10,45 @@ permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
   verify:
     name: Maven verify (Java 25)
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@v6
 
-      - name: Set up Java 25
+      - name: Set up Java 25 and Maven cache
         uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "25"
           cache: maven
+          cache-dependency-path: |
+            pom.xml
+            apps/control-api/pom.xml
+
+      - name: Verify Maven Wrapper integrity
+        run: ./mvnw --batch-mode --no-transfer-progress wrapper:verify
 
       - name: Verify reactor
-        run: sh ./mvnw --batch-mode --no-transfer-progress verify
+        run: ./mvnw --batch-mode --no-transfer-progress verify
 
+      - name: Upload verification reports on failure
+        if: failure()
+        uses: actions/upload-artifact@v6
+        with:
+          name: verification-reports-${{ github.run_id }}
+          if-no-files-found: warn
+          retention-days: 14
+          path: |
+            **/target/surefire-reports/**
+            **/target/failsafe-reports/**
+            **/target/checkstyle-result.xml
+            **/target/site/checkstyle.html
+            **/target/spring-modulith-docs/**
