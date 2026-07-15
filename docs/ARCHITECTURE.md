@@ -56,6 +56,18 @@ Optimized for predictable reads:
 
 Modules communicate through explicit application services, stable contracts, and domain events. Direct access to another module's internal package or tables is prohibited.
 
+### Executable module verification
+
+Spring Modulith derives application modules from direct subpackages below the application root. A module's root package is its default public API; nested packages are internal unless a deliberate named interface exposes them.
+
+The Maven `verify` lifecycle executes architecture tests that:
+
+- call `ApplicationModules.verify()` to reject module cycles, references to internal packages, and violations of explicitly allowed dependencies;
+- generate PlantUML component diagrams and module canvases under `target/spring-modulith-docs`;
+- run an isolated, deliberately invalid test fixture that proves cycles and cross-module access to an `internal` package are rejected.
+
+The invalid fixture lives outside the production package namespace. Production modules are added only with working vertical slices; empty placeholder modules are not created merely to populate a diagram.
+
 ## Persistence model
 
 PostgreSQL is the authoritative store. All tenant-owned records include an organization identifier, and uniqueness constraints include the tenant boundary where applicable.
