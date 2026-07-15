@@ -1,0 +1,22 @@
+services:
+  postgres:
+    image: postgres:17.10-alpine
+    environment:
+      POSTGRES_DB: ${FLAGFORGE_DB_NAME:-flagforge}
+      POSTGRES_USER: ${FLAGFORGE_DB_USER:-flagforge}
+      POSTGRES_PASSWORD: ${FLAGFORGE_DB_PASSWORD:-flagforge-local-only}
+    ports:
+      - "${FLAGFORGE_DB_PORT:-5432}:5432"
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -U ${FLAGFORGE_DB_USER:-flagforge} -d ${FLAGFORGE_DB_NAME:-flagforge}
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+    volumes:
+      - flagforge-postgres-data:/var/lib/postgresql/data
+
+volumes:
+  flagforge-postgres-data:

@@ -42,12 +42,13 @@ If a requested change conflicts with an invariant, stop and surface the conflict
 
 ## Build and run
 
-The supported toolchain is JDK 25 and the checked-in Maven Wrapper. Do not rely on a machine-wide Maven version.
+The supported toolchain is JDK 25, the checked-in Maven Wrapper, and Docker Engine or Docker Desktop. Do not rely on a machine-wide Maven version. The full `verify` lifecycle requires Docker because PostgreSQL integration tests run through Testcontainers.
 
 Linux and macOS:
 
 ```bash
 ./mvnw --batch-mode --no-transfer-progress verify
+docker compose up -d --wait postgres
 ./mvnw --projects apps/control-api spring-boot:run
 ```
 
@@ -55,8 +56,11 @@ Windows:
 
 ```powershell
 .\mvnw.cmd --batch-mode --no-transfer-progress verify
+docker compose up -d --wait postgres
 .\mvnw.cmd --projects apps/control-api spring-boot:run
 ```
+
+Use `docker compose down --volumes` only when intentionally resetting all local database state. Local defaults are synthetic development credentials and must not be reused outside local development.
 
 Operational smoke check:
 

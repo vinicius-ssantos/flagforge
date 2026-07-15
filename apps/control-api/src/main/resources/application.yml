@@ -3,6 +3,23 @@ spring:
     name: flagforge-control-api
   lifecycle:
     timeout-per-shutdown-phase: 20s
+  datasource:
+    url: ${FLAGFORGE_DB_URL:jdbc:postgresql://localhost:5432/flagforge}
+    username: ${FLAGFORGE_DB_USER:flagforge}
+    password: ${FLAGFORGE_DB_PASSWORD:flagforge-local-only}
+    hikari:
+      connection-timeout: 5000
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    default-schema: flagforge
+    schemas: flagforge
+    create-schemas: true
+    validate-on-migrate: true
+    clean-disabled: true
+  sql:
+    init:
+      mode: never
 
 server:
   shutdown: graceful
@@ -26,4 +43,3 @@ management:
       enabled: true
     env:
       enabled: false
-

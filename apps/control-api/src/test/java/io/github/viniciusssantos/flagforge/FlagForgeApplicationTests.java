@@ -12,7 +12,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 @SpringBootTest
 @AutoConfigureMockMvc
-class FlagForgeApplicationTests {
+class FlagForgeApplicationTests extends PostgreSqlIntegrationTestSupport {
 
     @Autowired
     private MockMvc mockMvc;
@@ -28,4 +28,3 @@ class FlagForgeApplicationTests {
                 .andExpect(jsonPath("$.status").value("UP"));
     }
 }
-
