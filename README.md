@@ -194,17 +194,20 @@ See [TEST_STRATEGY.md](docs/TEST_STRATEGY.md) for the planned verification matri
 
 ## Current status
 
-The repository is in **M0 / Foundation**. It contains the product specification and the first executable Control API application. PostgreSQL, Flyway, full architecture verification, and expanded quality gates remain tracked as separate M0 issues.
+The repository is in **M0 / Foundation**. It contains the product specification, executable module-boundary verification, the Control API application, and a PostgreSQL/Flyway persistence baseline. Expanded quality gates and the security and observability baseline remain tracked as separate M0 issues.
 
 ## Quick start
 
 ### Requirements
 
 - JDK 25.
+- Docker Engine or Docker Desktop with Docker Compose.
 - No system Maven installation is required. The wrapper downloads Maven 3.9.11.
-- No database or external credential is required for the foundation application.
+- The committed database credentials are intentionally local-only defaults and must not be reused in another environment.
 
 ### Verify the build
+
+Docker must be running. Testcontainers starts an isolated PostgreSQL 17.10 instance and verifies application startup, Flyway history, and migration validation.
 
 Linux/macOS:
 
@@ -217,6 +220,14 @@ Windows:
 ```powershell
 .\mvnw.cmd --batch-mode verify
 ```
+
+### Start local PostgreSQL
+
+```bash
+docker compose up -d --wait postgres
+```
+
+The defaults can be overridden with `FLAGFORGE_DB_NAME`, `FLAGFORGE_DB_USER`, `FLAGFORGE_DB_PASSWORD`, and `FLAGFORGE_DB_PORT`.
 
 ### Run the Control API
 
@@ -237,6 +248,19 @@ The initial operational endpoints are:
 ```text
 GET http://localhost:8080/actuator/health
 GET http://localhost:8080/actuator/info
+```
+
+Stop the local database while preserving its volume:
+
+```bash
+docker compose down
+```
+
+Remove and recreate all local database state:
+
+```bash
+docker compose down --volumes
+docker compose up -d --wait postgres
 ```
 
 ## Documentation
