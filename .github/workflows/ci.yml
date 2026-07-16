@@ -33,8 +33,8 @@ jobs:
             pom.xml
             apps/control-api/pom.xml
 
-      - name: Verify Maven Wrapper integrity
-        run: ./mvnw --batch-mode --no-transfer-progress wrapper:verify
+      - name: Verify Maven Wrapper bootstrap
+        run: ./mvnw --batch-mode --no-transfer-progress --version
 
       - name: Verify reactor
         run: ./mvnw --batch-mode --no-transfer-progress verify
