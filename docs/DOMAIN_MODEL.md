@@ -20,9 +20,16 @@ The tenant boundary. Owns projects, members, roles, quotas, and audit history. O
 
 ### Membership
 
-Links one authenticated actor identifier to one organization. The initial hierarchy stores only ACTIVE or SUSPENDED membership state. OWNER, ADMIN, DEVELOPER, and VIEWER permissions are intentionally deferred to the dedicated RBAC slice.
+Links one authenticated actor identifier to one organization. Memberships have ACTIVE or SUSPENDED state and one explicit role:
 
-An organization is bootstrapped together with its founding membership in one PostgreSQL transaction. Normal tenant operations accept no caller-supplied organization identifier; the organization is derived from the authenticated principal and checked against an active membership.
+- OWNER has every Control Plane permission, including organization ownership changes.
+- ADMIN manages memberships, projects, environments, and SDK credentials, but cannot grant or alter OWNER authority.
+- DEVELOPER reads organization and membership metadata and can write projects and environments.
+- VIEWER has read-only access to organization, membership, project, environment, and credential metadata.
+
+Authorization is checked before resource lookup. This prevents permission failures from becoming a resource-enumeration channel.
+
+An organization is bootstrapped together with an OWNER founding membership in one PostgreSQL transaction. Normal tenant operations accept no caller-supplied organization identifier; the organization is derived from the authenticated principal and checked against an active membership.
 
 ### Project
 
@@ -33,6 +40,12 @@ A software product or bounded application context. Flag keys are unique inside a
 An isolated configuration space such as development, staging, production, `qa-blue`, or any other valid project-local key. The familiar development, staging, and production names are examples only and are never automatically seeded or hard-coded. Credentials and publication protection are environment-scoped.
 
 The database stores the organization identifier on every environment and enforces a composite foreign key to `(organization_id, project_id)`, preventing an environment from referencing another tenant's project.
+
+### SDK Credential
+
+An environment-scoped machine credential that authorizes evaluation only. Its plaintext format contains a public lookup identifier and a cryptographically random 256-bit secret. Plaintext is returned only when the credential is created or rotated; PostgreSQL stores only the SHA-256 hash of the random secret plus non-sensitive metadata.
+
+Credentials can be listed by metadata, rotated, and revoked. Rotation creates a new credential linked to its predecessor and revokes the predecessor in one transaction. Authentication validates organization, environment, EVALUATE scope, ACTIVE status, and the secret using a constant-time comparison. Invalid, revoked, unknown, cross-environment, and cross-tenant credentials share the same generic failure contract.
 
 ### Feature Flag
 
@@ -134,7 +147,10 @@ Initial reason taxonomy:
 - Missing resources and resources owned by another organization produce the same generic not-found contract.
 - A principal claiming an organization without an ACTIVE membership is rejected before resource access.
 - Environment credentials cannot administer Control Plane resources.
+- SDK credential plaintext is never persisted and is returned only at creation or rotation.
+- SDK credentials authorize only their own organization and environment.
 - Revoked credentials stop authorizing new requests.
+- Missing, invalid, revoked, and wrongly scoped credentials fail with the same generic authentication contract.
 
 ### Publication
 
