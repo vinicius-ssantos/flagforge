@@ -6,7 +6,7 @@ CREATE TABLE flagforge.organizations (
     updated_at TIMESTAMPTZ NOT NULL,
     version BIGINT NOT NULL,
     CONSTRAINT organizations_slug_format
-        CHECK (slug ~ '^[a-z0-9][a-z0-9-]{0,62}$'),
+        CHECK (slug ~ '^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$'),
     CONSTRAINT organizations_display_name_not_blank
         CHECK (btrim(display_name) <> ''),
     CONSTRAINT organizations_slug_unique UNIQUE (slug)
@@ -45,7 +45,7 @@ CREATE TABLE flagforge.projects (
         REFERENCES flagforge.organizations (id)
         ON DELETE CASCADE,
     CONSTRAINT projects_key_format
-        CHECK (project_key ~ '^[a-z0-9][a-z0-9-]{0,62}$'),
+        CHECK (project_key ~ '^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$'),
     CONSTRAINT projects_display_name_not_blank
         CHECK (btrim(display_name) <> ''),
     CONSTRAINT projects_key_per_organization_unique
@@ -72,7 +72,7 @@ CREATE TABLE flagforge.environments (
         REFERENCES flagforge.projects (organization_id, id)
         ON DELETE CASCADE,
     CONSTRAINT environments_key_format
-        CHECK (environment_key ~ '^[a-z0-9][a-z0-9-]{0,62}$'),
+        CHECK (environment_key ~ '^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$'),
     CONSTRAINT environments_display_name_not_blank
         CHECK (btrim(display_name) <> ''),
     CONSTRAINT environments_key_per_project_unique
