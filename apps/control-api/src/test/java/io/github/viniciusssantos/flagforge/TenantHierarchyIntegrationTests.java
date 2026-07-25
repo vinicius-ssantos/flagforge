@@ -1,5 +1,6 @@
 package io.github.viniciusssantos.flagforge;
 
+import java.util.List;
 import java.util.UUID;
 
 import io.github.viniciusssantos.flagforge.tenancy.Environment;
@@ -16,7 +17,7 @@ import org.junit.jupiter.api.Test;
 import org.slf4j.MDC;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.security.authentication.TestingAuthenticationToken;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -115,9 +116,11 @@ class TenantHierarchyIntegrationTests extends PostgreSqlIntegrationTestSupport {
     }
 
     private static void authenticate(UUID organizationId, String actorId) {
-        TestingAuthenticationToken authentication = new TestingAuthenticationToken(
-                new TenantPrincipal(organizationId, actorId),
-                null);
+        UsernamePasswordAuthenticationToken authentication =
+                UsernamePasswordAuthenticationToken.authenticated(
+                        new TenantPrincipal(organizationId, actorId),
+                        null,
+                        List.of());
         SecurityContextHolder.getContext().setAuthentication(authentication);
     }
 
