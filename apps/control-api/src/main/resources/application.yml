@@ -3,6 +3,9 @@ spring:
     name: flagforge-control-api
   lifecycle:
     timeout-per-shutdown-phase: 20s
+  mvc:
+    problemdetails:
+      enabled: true
   datasource:
     url: ${FLAGFORGE_DB_URL:jdbc:postgresql://localhost:5432/flagforge}
     username: ${FLAGFORGE_DB_USER:flagforge}
@@ -23,6 +26,19 @@ spring:
 
 server:
   shutdown: graceful
+  error:
+    include-binding-errors: never
+    include-exception: false
+    include-message: never
+    include-stacktrace: never
+
+logging:
+  structured:
+    format:
+      console: ecs
+    ecs:
+      service:
+        environment: ${FLAGFORGE_ENVIRONMENT:local}
 
 management:
   endpoints:
@@ -33,6 +49,12 @@ management:
     health:
       probes:
         enabled: true
+        add-additional-paths: true
+      group:
+        liveness:
+          include: livenessState
+        readiness:
+          include: readinessState,db
       show-details: never
   info:
     build:
@@ -43,3 +65,18 @@ management:
       enabled: true
     env:
       enabled: false
+  tracing:
+    sampling:
+      probability: ${FLAGFORGE_TRACING_SAMPLING_PROBABILITY:0.1}
+    export:
+      otlp:
+        enabled: ${FLAGFORGE_OTEL_EXPORT_ENABLED:false}
+  opentelemetry:
+    enabled: ${FLAGFORGE_OTEL_ENABLED:true}
+    resource-attributes:
+      service.namespace: flagforge
+      deployment.environment.name: ${FLAGFORGE_ENVIRONMENT:local}
+    tracing:
+      export:
+        otlp:
+          endpoint: ${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:http://localhost:4318/v1/traces}
