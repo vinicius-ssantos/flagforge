@@ -4,6 +4,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 import io.github.viniciusssantos.flagforge.tenancy.Membership;
+import io.github.viniciusssantos.flagforge.tenancy.MembershipRole;
 import io.github.viniciusssantos.flagforge.tenancy.MembershipStatus;
 
 import org.springframework.data.repository.CrudRepository;
