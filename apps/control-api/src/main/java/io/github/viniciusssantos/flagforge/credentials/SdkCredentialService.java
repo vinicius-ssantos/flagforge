@@ -38,6 +38,9 @@ public class SdkCredentialService {
             "^ff_sdk_([0-9a-f]{24})_([0-9a-f]{64})$");
     private static final int KEY_ID_BYTES = 12;
     private static final int SECRET_BYTES = 32;
+    private static final String DUMMY_SECRET_HASH =
+            "e3b0c44298fc1c149afbf4c8996fb924"
+                    + "27ae41e4649b934ca495991b7852b855";
 
     private static final String CREDENTIAL_COLUMNS = """
             id,
@@ -142,14 +145,21 @@ public class SdkCredentialService {
             UUID expectedOrganizationId,
             UUID expectedEnvironmentId) {
         ParsedCredential parsed = parsePlaintext(plaintext);
-        CredentialRow credential = findByKeyId(parsed.keyId())
-                .orElseThrow(SdkAuthenticationException::invalidCredential);
+        Optional<CredentialRow> candidate = findByKeyId(parsed.keyId());
+        String expectedHash = candidate
+                .map(CredentialRow::secretHash)
+                .orElse(DUMMY_SECRET_HASH);
+        boolean secretValid = secretMatches(parsed.secret(), expectedHash);
+        if (candidate.isEmpty()) {
+            throw SdkAuthenticationException.invalidCredential();
+        }
 
-        boolean valid = credential.status() == CredentialStatus.ACTIVE
+        CredentialRow credential = candidate.get();
+        boolean valid = secretValid
+                && credential.status() == CredentialStatus.ACTIVE
                 && credential.scope() == CredentialScope.EVALUATE
                 && credential.organizationId().equals(expectedOrganizationId)
-                && credential.environmentId().equals(expectedEnvironmentId)
-                && secretMatches(parsed.secret(), credential.secretHash());
+                && credential.environmentId().equals(expectedEnvironmentId);
         if (!valid) {
             throw SdkAuthenticationException.invalidCredential();
         }
