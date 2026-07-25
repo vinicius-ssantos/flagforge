@@ -1,6 +1,14 @@
 ALTER TABLE flagforge.memberships
     ADD COLUMN role VARCHAR(20) NOT NULL DEFAULT 'VIEWER';
 
+UPDATE flagforge.memberships membership
+SET role = 'OWNER'
+WHERE membership.id IN (
+    SELECT DISTINCT ON (organization_id) id
+    FROM flagforge.memberships
+    ORDER BY organization_id, created_at, id
+);
+
 ALTER TABLE flagforge.memberships
     ADD CONSTRAINT memberships_role_supported
         CHECK (role IN ('OWNER', 'ADMIN', 'DEVELOPER', 'VIEWER'));
