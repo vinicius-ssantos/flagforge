@@ -32,9 +32,19 @@ flowchart LR
 
 ### Authentication and resource enumeration
 
-Only minimal health and build-information endpoints are public during M0. Every application route is default-denied until the authentication and RBAC model is implemented in issue #8.
+Only minimal health and build-information endpoints are public. Every application route remains default-denied unless an explicit authentication path and permission are configured.
 
-Authentication failures use one generic RFC 9457 Problem Details contract. The response does not indicate whether an organization, project, environment, flag, or other tenant-owned resource exists. Future handlers must resolve tenant identity from the authenticated principal before performing resource lookup.
+Human Control Plane authorization resolves organization identity from the authenticated principal, requires an ACTIVE membership, and checks an explicit permission before resource lookup. OWNER, ADMIN, DEVELOPER, and VIEWER roles use a fixed least-privilege matrix. Only OWNER can grant or alter OWNER authority.
+
+Authentication failures use one generic RFC 9457 Problem Details contract. The response does not indicate whether an organization, project, environment, flag, or other tenant-owned resource exists. Cross-tenant and missing resources use the same generic not-found contract.
+
+### Environment-scoped SDK credentials
+
+SDK credentials are distinct from human operator identities and authorize evaluation only in one organization and environment. Each plaintext credential contains a 96-bit public lookup identifier and a cryptographically random 256-bit secret. Plaintext is returned only at creation or rotation.
+
+PostgreSQL stores the lookup identifier, a SHA-256 hash of the random secret, scope, state, and lifecycle metadata. SHA-256 is appropriate here because the input is a uniformly random 256-bit secret rather than a human password. Authentication compares decoded hashes in constant time and validates ACTIVE state, EVALUATE scope, organization, and environment.
+
+Rotation creates a replacement and revokes the previous credential in one transaction. Revocation immediately prevents subsequent authorization. Malformed, unknown, wrong-secret, revoked, cross-environment, and cross-tenant credentials all return the same generic failure and must never be logged.
 
 ### Request correlation
 
@@ -78,8 +88,10 @@ Responses include defensive browser headers even though the current service is a
 
 | Threat | Initial mitigation | Follow-up |
 |---|---|---|
-| Tenant resource enumeration | Authentication before lookup and generic failures | Negative isolation tests in #7 and #8 |
-| Credential or context leakage in telemetry | No body/header logging, structured redaction policy, prohibited metric tag keys | Credential-specific tests in #8 and SDK tests in #20 |
+| Tenant resource enumeration | Authentication and permission checks before lookup, tenant-scoped repositories, and generic failures | Preserve negative isolation tests for every new tenant-owned aggregate |
+| SDK credential theft from storage | Persist only a hash of a uniformly random 256-bit secret; return plaintext once | Add deployment secret-scanning and operational rotation guidance |
+| Cross-environment SDK credential reuse | Bind authentication to organization, environment, EVALUATE scope, and ACTIVE status | Reuse the same boundary in the evaluation API and Java SDK |
+| Credential or context leakage in telemetry | No body/header logging, structured redaction policy, prohibited metric tag keys | Preserve credential-redaction tests in the evaluation API and SDK |
 | High-cardinality metric exhaustion | Global deny filter and bounded-tag guidance | Benchmark and telemetry review in #21 |
 | Malicious correlation header | Strict validation, length limit, generated fallback | Preserve same policy across gateways and SDKs |
 | Accidental public endpoint | Explicit actuator allowlist and `denyAll` fallback | Authorization matrix in #8 |
@@ -89,6 +101,6 @@ Responses include defensive browser headers even though the current service is a
 
 ## Residual risk
 
-M0 does not yet provide real operator authentication, tenant membership, SDK credentials, authorization roles, rate limiting, or protected-environment approval. Those capabilities remain explicit follow-up work. The current default-deny posture prevents placeholder or future routes from becoming anonymously accessible while those boundaries are still under development.
+The application now defines tenant memberships, Control Plane roles, explicit permissions, and environment-scoped SDK credential lifecycle semantics. It does not yet integrate an external human identity provider, expose production HTTP authentication endpoints, implement rate limiting, or provide protected-environment approval. The current default-deny posture prevents placeholder or future routes from becoming anonymously accessible while those boundaries remain under development.
 
 Any change that introduces a new external dependency, credential type, public endpoint, tenant lookup, telemetry exporter, or request-body logging must update this threat model in the same pull request.
