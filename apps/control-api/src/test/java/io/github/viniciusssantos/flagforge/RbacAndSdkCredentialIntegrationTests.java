@@ -93,6 +93,24 @@ class RbacAndSdkCredentialIntegrationTests extends PostgreSqlIntegrationTestSupp
         assertAccessDenied(() -> tenantHierarchyService.addMembership(
                 "actor-owner-two",
                 MembershipRole.OWNER));
+
+        authenticate(organization.id(), "actor-owner");
+        IllegalStateException lastOwnerFailure = assertThrows(
+                IllegalStateException.class,
+                () -> tenantHierarchyService.changeMembershipRole(
+                        "actor-owner",
+                        MembershipRole.VIEWER));
+        assertThat(lastOwnerFailure)
+                .hasMessage("Organization must retain at least one active owner");
+
+        tenantHierarchyService.addMembership(
+                "actor-owner-two",
+                MembershipRole.OWNER);
+        assertThat(tenantHierarchyService.changeMembershipRole(
+                        "actor-owner",
+                        MembershipRole.ADMIN)
+                .role())
+                .isEqualTo(MembershipRole.ADMIN);
     }
 
     @Test
