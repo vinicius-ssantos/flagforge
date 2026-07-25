@@ -6,9 +6,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
-import org.springframework.test.web.servlet.MvcResult;
 
-import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.matchesPattern;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
@@ -19,6 +17,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @SpringBootTest
 @AutoConfigureMockMvc
 class SecurityAndObservabilityIntegrationTests extends PostgreSqlIntegrationTestSupport {
+
+    private static final String UUID_PATTERN =
+            "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
 
     @Autowired
     private MockMvc mockMvc;
@@ -58,19 +59,8 @@ class SecurityAndObservabilityIntegrationTests extends PostgreSqlIntegrationTest
 
     @Test
     void unauthenticatedRequestsCannotEnumerateTenantResources() throws Exception {
-        MvcResult existingStylePath = mockMvc.perform(get("/api/organizations/acme/projects/known"))
-                .andExpect(status().isUnauthorized())
-                .andReturn();
-        MvcResult missingStylePath = mockMvc.perform(get("/api/organizations/acme/projects/missing"))
-                .andExpect(status().isUnauthorized())
-                .andReturn();
-
-        assertThat(existingStylePath.getResponse().getContentAsString())
-                .doesNotContain("known", "acme")
-                .contains("Authentication is required to access this resource.");
-        assertThat(missingStylePath.getResponse().getContentAsString())
-                .doesNotContain("missing", "acme")
-                .contains("Authentication is required to access this resource.");
+        assertGenericAuthenticationFailure("/api/organizations/acme/projects/known");
+        assertGenericAuthenticationFailure("/api/organizations/acme/projects/missing");
     }
 
     @Test
@@ -83,7 +73,7 @@ class SecurityAndObservabilityIntegrationTests extends PostgreSqlIntegrationTest
                 .andExpect(status().isOk())
                 .andExpect(header().string(
                         "X-Correlation-ID",
-                        matchesPattern("[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")));
+                        matchesPattern(UUID_PATTERN)));
     }
 
     @Test
@@ -97,5 +87,14 @@ class SecurityAndObservabilityIntegrationTests extends PostgreSqlIntegrationTest
                         "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'"))
                 .andExpect(header().string("Referrer-Policy", "no-referrer"))
                 .andExpect(header().string("Permissions-Policy", "camera=(), microphone=(), geolocation=()"));
+    }
+
+    private void assertGenericAuthenticationFailure(String path) throws Exception {
+        mockMvc.perform(get(path))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.type").value("urn:flagforge:problem:authentication-required"))
+                .andExpect(jsonPath("$.title").value("Authentication required"))
+                .andExpect(jsonPath("$.status").value(401))
+                .andExpect(jsonPath("$.detail").value("Authentication is required to access this resource."));
     }
 }
