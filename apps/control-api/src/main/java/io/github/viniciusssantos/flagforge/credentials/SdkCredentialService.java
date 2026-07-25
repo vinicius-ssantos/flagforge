@@ -5,6 +5,7 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.security.Principal;
 import java.security.SecureRandom;
+import java.sql.Timestamp;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.HexFormat;
@@ -215,8 +216,8 @@ public class SdkCredentialService {
                 .addValue("scope", CredentialScope.EVALUATE.name())
                 .addValue("status", CredentialStatus.ACTIVE.name())
                 .addValue("rotatedFromId", rotatedFromId)
-                .addValue("createdAt", now)
-                .addValue("updatedAt", now);
+                .addValue("createdAt", Timestamp.from(now))
+                .addValue("updatedAt", Timestamp.from(now));
         jdbcTemplate.update(sql, parameters);
 
         CredentialMetadata metadata = new CredentialMetadata(
@@ -250,8 +251,8 @@ public class SdkCredentialService {
         int updated = jdbcTemplate.update(
                 sql,
                 new MapSqlParameterSource()
-                        .addValue("revokedAt", revokedAt)
-                        .addValue("updatedAt", revokedAt)
+                        .addValue("revokedAt", Timestamp.from(revokedAt))
+                        .addValue("updatedAt", Timestamp.from(revokedAt))
                         .addValue("id", current.id())
                         .addValue("organizationId", current.organizationId())
                         .addValue("version", current.version()));
@@ -311,7 +312,7 @@ public class SdkCredentialService {
 
     private static CredentialRow mapRow(java.sql.ResultSet resultSet)
             throws java.sql.SQLException {
-        java.sql.Timestamp revokedAt = resultSet.getTimestamp("revoked_at");
+        Timestamp revokedAt = resultSet.getTimestamp("revoked_at");
         return new CredentialRow(
                 resultSet.getObject("id", UUID.class),
                 resultSet.getObject("organization_id", UUID.class),
