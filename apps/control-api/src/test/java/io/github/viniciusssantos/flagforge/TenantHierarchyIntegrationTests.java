@@ -11,8 +11,8 @@ import io.github.viniciusssantos.flagforge.tenancy.TenantAuditContext;
 import io.github.viniciusssantos.flagforge.tenancy.TenantHierarchyService;
 import io.github.viniciusssantos.flagforge.tenancy.TenantPrincipal;
 
-import org.assertj.core.api.ThrowableAssert.ThrowingCallable;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.function.Executable;
 import org.junit.jupiter.api.Test;
 import org.slf4j.MDC;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -21,7 +21,7 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.core.context.SecurityContextHolder;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.catchThrowableOfType;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 @SpringBootTest
 class TenantHierarchyIntegrationTests extends PostgreSqlIntegrationTestSupport {
@@ -79,9 +79,9 @@ class TenantHierarchyIntegrationTests extends PostgreSqlIntegrationTestSupport {
         Organization organization = registerOrganization("membership", "actor-owner");
 
         authenticate(organization.id(), "actor-outsider");
-        TenantAccessException failure = catchThrowableOfType(
-                tenantHierarchyService::currentOrganization,
-                TenantAccessException.class);
+        TenantAccessException failure = assertThrows(
+                TenantAccessException.class,
+                tenantHierarchyService::currentOrganization);
 
         assertThat(failure.reason())
                 .isEqualTo(TenantAccessException.Reason.AUTHENTICATION_REQUIRED);
@@ -124,10 +124,10 @@ class TenantHierarchyIntegrationTests extends PostgreSqlIntegrationTestSupport {
         SecurityContextHolder.getContext().setAuthentication(authentication);
     }
 
-    private static void assertGenericNotFound(ThrowingCallable operation) {
-        TenantAccessException failure = catchThrowableOfType(
-                operation,
-                TenantAccessException.class);
+    private static void assertGenericNotFound(Executable operation) {
+        TenantAccessException failure = assertThrows(
+                TenantAccessException.class,
+                operation);
         assertThat(failure.reason())
                 .isEqualTo(TenantAccessException.Reason.RESOURCE_NOT_FOUND);
         assertThat(failure).hasMessage("Resource not found");
