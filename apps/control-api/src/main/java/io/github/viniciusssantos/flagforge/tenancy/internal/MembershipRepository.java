@@ -18,4 +18,9 @@ public interface MembershipRepository extends CrudRepository<Membership, UUID> {
     Optional<Membership> findByOrganizationIdAndActorId(
             UUID organizationId,
             String actorId);
+
+    long countByOrganizationIdAndRoleAndStatus(
+            UUID organizationId,
+            MembershipRole role,
+            MembershipStatus status);
 }
