@@ -92,6 +92,14 @@ public class TenantHierarchyService {
                 .orElseThrow(TenantAccessException::resourceNotFound);
         if (membership.role() == MembershipRole.OWNER) {
             authorizationService.require(ControlPlanePermission.ORGANIZATION_MANAGE);
+            long activeOwners = membershipRepository.countByOrganizationIdAndRoleAndStatus(
+                    identity.organizationId(),
+                    MembershipRole.OWNER,
+                    MembershipStatus.ACTIVE);
+            if (role != MembershipRole.OWNER && activeOwners <= 1) {
+                throw new IllegalStateException(
+                        "Organization must retain at least one active owner");
+            }
         }
         return membershipRepository.save(membership.changeRole(role, Instant.now()));
     }
