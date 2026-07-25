@@ -2,6 +2,7 @@ package io.github.viniciusssantos.flagforge.tenancy;
 
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.Locale;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.regex.Pattern;
@@ -19,7 +20,7 @@ final class TenantValidation {
     }
 
     static String requireKey(String value, String fieldName) {
-        String normalized = requireText(value, fieldName, 63).toLowerCase();
+        String normalized = requireText(value, fieldName, 63).toLowerCase(Locale.ROOT);
         if (!KEY_PATTERN.matcher(normalized).matches()) {
             throw new IllegalArgumentException(
                     fieldName + " must use lowercase letters, digits, and internal hyphens");
