@@ -22,7 +22,7 @@ The tenant boundary. Owns projects, members, roles, quotas, and audit history. O
 
 Links one authenticated actor identifier to one organization. Memberships have ACTIVE or SUSPENDED state and one explicit role:
 
-- OWNER has every Control Plane permission, including organization ownership changes.
+- OWNER has every Control Plane permission, including organization ownership changes. Every organization must retain at least one ACTIVE OWNER.
 - ADMIN manages memberships, projects, environments, and SDK credentials, but cannot grant or alter OWNER authority.
 - DEVELOPER reads organization and membership metadata and can write projects and environments.
 - VIEWER has read-only access to organization, membership, project, environment, and credential metadata.
