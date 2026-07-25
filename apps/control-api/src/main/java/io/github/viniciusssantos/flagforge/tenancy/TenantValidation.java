@@ -1,6 +1,7 @@
 package io.github.viniciusssantos.flagforge.tenancy;
 
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.regex.Pattern;
@@ -35,7 +36,8 @@ final class TenantValidation {
     }
 
     static Instant requireTimestamp(Instant value, String fieldName) {
-        return Objects.requireNonNull(value, fieldName + " is required");
+        return Objects.requireNonNull(value, fieldName + " is required")
+                .truncatedTo(ChronoUnit.MICROS);
     }
 
     static Long requireVersion(Long value) {
