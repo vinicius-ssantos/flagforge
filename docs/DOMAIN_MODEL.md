@@ -51,16 +51,16 @@ Credentials can be listed by metadata, rotated, and revoked. Rotation creates a 
 
 A stable key and metadata describing a runtime decision. A flag has a value type, lifecycle state, ownership, variants, rules, default behavior, and optional prerequisites.
 
-Initial types:
+The first executable types are:
 
-- Boolean.
-- String.
-- Integer/decimal.
-- JSON object with a bounded payload size.
+- BOOLEAN, with named boolean variants such as `disabled=false` and `enabled=true`.
+- STRING, with named variants such as `control=classic` and `compact=compact-v2`.
+
+NUMBER and JSON remain reserved in the schema and enum so their storage contracts are explicit, but creation is rejected with a stable `UNSUPPORTED_VALUE_TYPE` code until numeric normalization and bounded JSON validation are fully implemented. Values are never silently coerced between types.
 
 ### Variant
 
-A named typed value, such as `control`, `checkout-a`, or `checkout-b`. Named variants make evaluation and exposure metrics understandable.
+A named typed value, such as `disabled`, `enabled`, `control`, `checkout-a`, or `checkout-b`. Every variant has exactly the same immutable value type as its flag. Variant keys are unique per flag, and the declared default must reference an existing variant. Named variants make evaluation and exposure metrics understandable.
 
 ### Segment
 
@@ -92,6 +92,13 @@ stateDiagram-v2
 ```
 
 Approval is optional in non-protected environments and policy-controlled in production.
+
+Stable flag identity has a smaller lifecycle before published revisions exist:
+
+- ACTIVE flags can be resolved for evaluation and editing.
+- ARCHIVED flags remain readable for history but cannot be resolved as active.
+- A project cannot reuse an archived key, especially with an incompatible type.
+- RELEASE and EXPERIMENT flags require an expected removal date; OPERATIONAL and KILL_SWITCH flags may be permanent.
 
 ## Evaluation algorithm
 
@@ -164,6 +171,8 @@ Initial reason taxonomy:
 
 - A response comes from one complete snapshot version.
 - Type mismatch never silently coerces a value.
+- Stable flag keys are unique inside a project and cannot change value type.
+- Archived flags preserve metadata and variants while leaving the active lookup path.
 - Evaluation terminates even when malformed dependency input is encountered.
 - Equal normalized inputs and configuration produce equal outputs.
 
