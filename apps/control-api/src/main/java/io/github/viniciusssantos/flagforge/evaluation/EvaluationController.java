@@ -4,7 +4,9 @@ import io.github.viniciusssantos.flagforge.credentials.SdkCredentialService.SdkP
 import io.github.viniciusssantos.flagforge.evaluation.EvaluationApi.Request;
 import io.github.viniciusssantos.flagforge.evaluation.EvaluationApi.Response;
 
+import org.springframework.http.CacheControl;
 import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -27,7 +29,7 @@ final class EvaluationController {
             path = "/{flagKey}",
             consumes = MediaType.APPLICATION_JSON_VALUE,
             produces = MediaType.APPLICATION_JSON_VALUE)
-    Response evaluate(
+    ResponseEntity<Response> evaluate(
             @PathVariable String flagKey,
             @RequestBody Request request,
             Authentication authentication) {
@@ -35,6 +37,12 @@ final class EvaluationController {
             throw new AccessDeniedException(
                     "SDK evaluation principal is required");
         }
-        return evaluationService.evaluate(principal, flagKey, request);
+        Response response = evaluationService.evaluate(
+                principal,
+                flagKey,
+                request);
+        return ResponseEntity.ok()
+                .cacheControl(CacheControl.noStore())
+                .body(response);
     }
 }
