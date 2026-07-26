@@ -28,6 +28,7 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -93,7 +94,8 @@ class EvaluationApiIntegrationTests extends PostgreSqlIntegrationTestSupport {
                 .andExpect(jsonPath("$.variant").value("disabled"))
                 .andExpect(jsonPath("$.reason").value("DEFAULT"))
                 .andExpect(jsonPath("$.configurationVersion").isNotEmpty())
-                .andExpect(jsonPath("$.error.code").value("NONE"));
+                .andExpect(jsonPath("$.error.code").value("NONE"))
+                .andExpect(header().string("Cache-Control", "no-store"));
 
         mockMvc.perform(post("/api/v1/evaluate/checkout-v2")
                         .header(
