@@ -18,12 +18,12 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 @Component
-final class DatabaseEvaluationSnapshotProvider
+public class DatabaseEvaluationSnapshotProvider
         implements EvaluationSnapshotProvider {
 
     private final NamedParameterJdbcTemplate jdbcTemplate;
 
-    DatabaseEvaluationSnapshotProvider(
+    public DatabaseEvaluationSnapshotProvider(
             NamedParameterJdbcTemplate jdbcTemplate) {
         this.jdbcTemplate = jdbcTemplate;
     }
