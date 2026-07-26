@@ -139,6 +139,15 @@ class EvaluationServiceTests {
                 PRINCIPAL,
                 "checkout-v2",
                 request(true, Map.of()));
+        Request disabledWrongType = new Request(
+                ValueType.STRING,
+                JsonNodeFactory.instance.textNode("fallback"),
+                "sensitive-user-123",
+                Map.of());
+        Response disabledMismatch = service(Optional.of(disabledSnapshot)).evaluate(
+                PRINCIPAL,
+                "checkout-v2",
+                disabledWrongType);
 
         EvaluationSnapshot stringSnapshot = new EvaluationSnapshot(
                 ORGANIZATION_ID,
@@ -172,6 +181,10 @@ class EvaluationServiceTests {
         assertThat(disabled.value()).isEqualTo(true);
         assertThat(disabled.reason()).isEqualTo(Reason.DISABLED);
         assertThat(disabled.error().code()).isEqualTo(ErrorCode.NONE);
+        assertThat(disabledMismatch.reason()).isEqualTo(Reason.ERROR);
+        assertThat(disabledMismatch.value()).isEqualTo("fallback");
+        assertThat(disabledMismatch.error().code())
+                .isEqualTo(ErrorCode.TYPE_MISMATCH);
         assertThat(mismatch.value()).isEqualTo(false);
         assertThat(mismatch.error().code()).isEqualTo(ErrorCode.TYPE_MISMATCH);
     }
@@ -224,7 +237,7 @@ class EvaluationServiceTests {
     }
 
     @Test
-    void rejectsFallbackAndAttributesThatDoNotMatchDeclaredTypes() {
+    void rejectsFallbackAttributesAndOversizedTargetingKeys() {
         EvaluationService service = service(Optional.of(snapshot(
                 true,
                 false,
@@ -244,6 +257,11 @@ class EvaluationServiceTests {
                         new TypedAttribute(
                                 AttributeType.NUMBER,
                                 JsonNodeFactory.instance.textNode("18"))));
+        Request oversizedTargetingKey = new Request(
+                ValueType.BOOLEAN,
+                JsonNodeFactory.instance.booleanNode(false),
+                "x".repeat(1_025),
+                Map.of());
 
         assertThatThrownBy(() -> service.evaluate(
                 PRINCIPAL,
@@ -257,6 +275,12 @@ class EvaluationServiceTests {
                 invalidAttribute))
                 .isInstanceOf(EvaluationRequestException.class)
                 .hasMessageContaining("declared type");
+        assertThatThrownBy(() -> service.evaluate(
+                PRINCIPAL,
+                "checkout-v2",
+                oversizedTargetingKey))
+                .isInstanceOf(EvaluationRequestException.class)
+                .hasMessageContaining("UTF-8 byte limit");
     }
 
     @Test
