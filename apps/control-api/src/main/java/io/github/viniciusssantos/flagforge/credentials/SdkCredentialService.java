@@ -140,10 +140,7 @@ public class SdkCredentialService {
     }
 
     @Transactional(readOnly = true)
-    public SdkPrincipal authenticateForEnvironment(
-            String plaintext,
-            UUID expectedOrganizationId,
-            UUID expectedEnvironmentId) {
+    public SdkPrincipal authenticate(String plaintext) {
         ParsedCredential parsed = parsePlaintext(plaintext);
         Optional<CredentialRow> candidate = findByKeyId(parsed.keyId());
         String expectedHash = candidate
@@ -157,9 +154,7 @@ public class SdkCredentialService {
         CredentialRow credential = candidate.get();
         boolean valid = secretValid
                 && credential.status() == CredentialStatus.ACTIVE
-                && credential.scope() == CredentialScope.EVALUATE
-                && credential.organizationId().equals(expectedOrganizationId)
-                && credential.environmentId().equals(expectedEnvironmentId);
+                && credential.scope() == CredentialScope.EVALUATE;
         if (!valid) {
             throw SdkAuthenticationException.invalidCredential();
         }
@@ -169,6 +164,20 @@ public class SdkCredentialService {
                 credential.organizationId(),
                 credential.environmentId(),
                 credential.scope());
+    }
+
+    @Transactional(readOnly = true)
+    public SdkPrincipal authenticateForEnvironment(
+            String plaintext,
+            UUID expectedOrganizationId,
+            UUID expectedEnvironmentId) {
+        SdkPrincipal principal = authenticate(plaintext);
+        boolean valid = principal.organizationId().equals(expectedOrganizationId)
+                && principal.environmentId().equals(expectedEnvironmentId);
+        if (!valid) {
+            throw SdkAuthenticationException.invalidCredential();
+        }
+        return principal;
     }
 
     private IssuedCredential issue(
