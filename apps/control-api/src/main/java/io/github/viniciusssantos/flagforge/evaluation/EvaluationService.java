@@ -1,6 +1,7 @@
 package io.github.viniciusssantos.flagforge.evaluation;
 
 import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
@@ -92,6 +93,15 @@ public class EvaluationService {
         }
 
         EvaluationSnapshot snapshot = loaded.get();
+        if (snapshot.valueType() != request.type()) {
+            return record(errorResponse(
+                    normalizedFlagKey,
+                    request.type(),
+                    fallbackValue,
+                    snapshot.configurationVersion(),
+                    ErrorCode.TYPE_MISMATCH,
+                    "Requested type does not match flag type; caller fallback returned."));
+        }
         if (!snapshot.enabled()) {
             return record(successResponse(
                     normalizedFlagKey,
@@ -105,15 +115,6 @@ public class EvaluationService {
                     null,
                     null,
                     false));
-        }
-        if (snapshot.valueType() != request.type()) {
-            return record(errorResponse(
-                    normalizedFlagKey,
-                    request.type(),
-                    fallbackValue,
-                    snapshot.configurationVersion(),
-                    ErrorCode.TYPE_MISMATCH,
-                    "Requested type does not match flag type; caller fallback returned."));
         }
 
         EvaluationResult targetingResult;
@@ -252,6 +253,15 @@ public class EvaluationService {
     }
 
     private static EvaluationContext createContext(Request request) {
+        int targetingKeyBytes = request.targetingKey()
+                .getBytes(StandardCharsets.UTF_8)
+                .length;
+        if (targetingKeyBytes
+                > DeterministicRolloutAllocator.MAX_TARGETING_KEY_BYTES) {
+            throw new EvaluationRequestException(
+                    ErrorCode.INVALID_CONTEXT,
+                    "Targeting key exceeds the UTF-8 byte limit");
+        }
         Map<String, AttributeValue> attributes = new LinkedHashMap<>();
         for (Map.Entry<String, TypedAttribute> entry
                 : request.attributes().entrySet()) {
