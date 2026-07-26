@@ -9,7 +9,6 @@ import java.nio.charset.StandardCharsets;
 import java.text.Normalizer;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Locale;
 import java.util.Objects;
 import java.util.SplittableRandom;
 import java.util.UUID;
@@ -143,8 +142,9 @@ class DeterministicRolloutAllocatorTests {
             }
         }
 
-        assertThat(deciles).allSatisfy(count ->
-                assertThat(count).isBetween(9_700, 10_300));
+        for (int count : deciles) {
+            assertThat(count).isBetween(9_700, 10_300);
+        }
         assertThat(includedAtTwentyPercent).isBetween(19_500, 20_500);
     }
 
