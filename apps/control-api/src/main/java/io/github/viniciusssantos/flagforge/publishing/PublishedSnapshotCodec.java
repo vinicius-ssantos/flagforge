@@ -9,6 +9,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.HexFormat;
 import java.util.List;
@@ -93,7 +94,7 @@ public final class PublishedSnapshotCodec {
             long revisionNumber = input.readLong();
             String algorithmVersion = readString(input, MAX_ALGORITHM_BYTES);
             int flagCount = readCount(input, MAX_FLAGS, "flag");
-            List.Builder<PublishedFlag> flags = List.builder();
+            List<PublishedFlag> flags = new ArrayList<>(flagCount);
             for (int index = 0; index < flagCount; index++) {
                 flags.add(readFlag(input));
             }
@@ -107,7 +108,7 @@ public final class PublishedSnapshotCodec {
                     environmentId,
                     revisionNumber,
                     algorithmVersion,
-                    flags.build());
+                    flags);
             validate(snapshot);
             return snapshot;
         } catch (EOFException exception) {
@@ -159,7 +160,7 @@ public final class PublishedSnapshotCodec {
         boolean enabled = input.readBoolean();
         String defaultVariant = readString(input, MAX_KEY_BYTES);
         int variantCount = readCount(input, MAX_VARIANTS_PER_FLAG, "variant");
-        List.Builder<PublishedVariant> variants = List.builder();
+        List<PublishedVariant> variants = new ArrayList<>(variantCount);
         for (int index = 0; index < variantCount; index++) {
             String variantKey = readString(input, MAX_KEY_BYTES);
             PublishedValueType variantType = PublishedValueType.fromWire(input.readByte());
@@ -178,7 +179,7 @@ public final class PublishedSnapshotCodec {
                 valueType,
                 enabled,
                 defaultVariant,
-                variants.build());
+                variants);
     }
 
     private static void writeUuid(DataOutputStream output, UUID value)
