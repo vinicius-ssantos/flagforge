@@ -1,6 +1,8 @@
 package io.github.viniciusssantos.flagforge.publishing;
 
+import java.math.BigDecimal;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 import io.github.viniciusssantos.flagforge.publishing.PublishedSnapshotCodec.CodecError;
@@ -10,6 +12,20 @@ import io.github.viniciusssantos.flagforge.publishing.PublishedSnapshotCodec.Pub
 import io.github.viniciusssantos.flagforge.publishing.PublishedSnapshotCodec.PublishedValueType;
 import io.github.viniciusssantos.flagforge.publishing.PublishedSnapshotCodec.PublishedVariant;
 import io.github.viniciusssantos.flagforge.publishing.PublishedSnapshotCodec.SnapshotCodecException;
+import io.github.viniciusssantos.flagforge.targeting.TargetingEngine.EqualityCondition;
+import io.github.viniciusssantos.flagforge.targeting.TargetingEngine.FlagTarget;
+import io.github.viniciusssantos.flagforge.targeting.TargetingEngine.NumberValue;
+import io.github.viniciusssantos.flagforge.targeting.TargetingEngine.NumericCondition;
+import io.github.viniciusssantos.flagforge.targeting.TargetingEngine.NumericOperator;
+import io.github.viniciusssantos.flagforge.targeting.TargetingEngine.Prerequisite;
+import io.github.viniciusssantos.flagforge.targeting.TargetingEngine.Segment;
+import io.github.viniciusssantos.flagforge.targeting.TargetingEngine.SegmentCondition;
+import io.github.viniciusssantos.flagforge.targeting.TargetingEngine.SemanticVersionCondition;
+import io.github.viniciusssantos.flagforge.targeting.TargetingEngine.StringSetCondition;
+import io.github.viniciusssantos.flagforge.targeting.TargetingEngine.StringValue;
+import io.github.viniciusssantos.flagforge.targeting.TargetingEngine.TargetingConfiguration;
+import io.github.viniciusssantos.flagforge.targeting.TargetingEngine.TargetingRule;
+import io.github.viniciusssantos.flagforge.targeting.TargetingEngine.VersionOperator;
 
 import org.junit.jupiter.api.Test;
 
@@ -38,6 +54,38 @@ class PublishedSnapshotCodecTests {
         assertThat(second.payload()).isEqualTo(first.payload());
         assertThat(second.checksum()).isEqualTo(first.checksum());
         assertThat(decoded).isEqualTo(snapshot);
+        assertThat(decoded.targetingConfiguration().segments()).isEmpty();
+        assertThat(decoded.targetingConfiguration().flags())
+                .allSatisfy(flag -> {
+                    assertThat(flag.prerequisites()).isEmpty();
+                    assertThat(flag.rules()).isEmpty();
+                });
+    }
+
+    @Test
+    void roundTripsTheCompleteVersionTwoTargetingGraphDeterministically() {
+        PublishedSnapshot snapshot = graphSnapshot();
+
+        EncodedSnapshot first = codec.encode(snapshot);
+        EncodedSnapshot second = codec.encode(snapshot);
+        PublishedSnapshot decoded = codec.decode(
+                first.payload(),
+                first.checksum());
+
+        assertThat(first.payload()).hasSizeGreaterThan(244);
+        assertThat(second.payload()).isEqualTo(first.payload());
+        assertThat(second.checksum()).isEqualTo(first.checksum());
+        assertThat(decoded).isEqualTo(snapshot);
+        assertThat(decoded.schemaVersion())
+                .isEqualTo(PublishedSnapshotCodec.SCHEMA_VERSION);
+        assertThat(decoded.targetingConfiguration().segments())
+                .extracting(Segment::key)
+                .containsExactly("staff");
+        assertThat(decoded.targetingConfiguration().flags().get(1).prerequisites())
+                .containsExactly(new Prerequisite("checkout-layout", "control"));
+        assertThat(decoded.targetingConfiguration().flags().get(1).rules())
+                .extracting(TargetingRule::key)
+                .containsExactly("internal-users");
     }
 
     @Test
@@ -52,7 +100,7 @@ class PublishedSnapshotCodecTests {
         assertThat(checksumFailure.code()).isEqualTo(CodecError.CHECKSUM_MISMATCH);
 
         byte[] unsupportedSchema = encoded.payload();
-        unsupportedSchema[11] = 2;
+        unsupportedSchema[11] = 3;
         SnapshotCodecException schemaFailure = assertThrows(
                 SnapshotCodecException.class,
                 () -> codec.decode(
@@ -116,6 +164,73 @@ class PublishedSnapshotCodecTests {
     }
 
     private static PublishedSnapshot compatibilitySnapshot() {
+        List<PublishedFlag> flags = publishedFlags();
+        return new PublishedSnapshot(
+                PublishedSnapshotCodec.LEGACY_SCHEMA_VERSION,
+                UUID.fromString("11111111-1111-1111-1111-111111111111"),
+                UUID.fromString("22222222-2222-2222-2222-222222222222"),
+                UUID.fromString("33333333-3333-3333-3333-333333333333"),
+                7,
+                PublishedSnapshotCodec.ALGORITHM_VERSION,
+                flags);
+    }
+
+    private static PublishedSnapshot graphSnapshot() {
+        List<PublishedFlag> flags = publishedFlags();
+        Segment staff = new Segment(
+                "staff",
+                Set.of("user-1"),
+                Set.of("user-2"),
+                List.of(
+                        new EqualityCondition(
+                                "country",
+                                new StringValue("BR")),
+                        new NumericCondition(
+                                "age",
+                                NumericOperator.GREATER_THAN_OR_EQUAL,
+                                new BigDecimal("18")),
+                        new SemanticVersionCondition(
+                                "app-version",
+                                VersionOperator.GREATER_THAN_OR_EQUAL,
+                                "2.1.0"),
+                        new StringSetCondition(
+                                "plan",
+                                Set.of("enterprise", "premium"))));
+        TargetingConfiguration graph = new TargetingConfiguration(
+                List.of(
+                        new FlagTarget(
+                                "checkout-layout",
+                                Set.of("compact", "control"),
+                                "control",
+                                List.of(),
+                                List.of()),
+                        new FlagTarget(
+                                "checkout-v2",
+                                Set.of("disabled", "enabled"),
+                                "disabled",
+                                List.of(new Prerequisite(
+                                        "checkout-layout",
+                                        "control")),
+                                List.of(new TargetingRule(
+                                        "internal-users",
+                                        10,
+                                        List.of(new SegmentCondition(
+                                                "staff",
+                                                false)),
+                                        "enabled")))),
+                List.of(staff));
+        return new PublishedSnapshot(
+                PublishedSnapshotCodec.SCHEMA_VERSION,
+                UUID.fromString("11111111-1111-1111-1111-111111111111"),
+                UUID.fromString("22222222-2222-2222-2222-222222222222"),
+                UUID.fromString("33333333-3333-3333-3333-333333333333"),
+                8,
+                PublishedSnapshotCodec.ALGORITHM_VERSION,
+                flags,
+                graph);
+    }
+
+    private static List<PublishedFlag> publishedFlags() {
         PublishedFlag checkoutLayout = new PublishedFlag(
                 "checkout-layout",
                 PublishedValueType.STRING,
@@ -132,13 +247,6 @@ class PublishedSnapshotCodecTests {
                 List.of(
                         PublishedVariant.booleanValue("disabled", false),
                         PublishedVariant.booleanValue("enabled", true)));
-        return new PublishedSnapshot(
-                PublishedSnapshotCodec.SCHEMA_VERSION,
-                UUID.fromString("11111111-1111-1111-1111-111111111111"),
-                UUID.fromString("22222222-2222-2222-2222-222222222222"),
-                UUID.fromString("33333333-3333-3333-3333-333333333333"),
-                7,
-                PublishedSnapshotCodec.ALGORITHM_VERSION,
-                List.of(checkoutLayout, checkoutV2));
+        return List.of(checkoutLayout, checkoutV2);
     }
 }
