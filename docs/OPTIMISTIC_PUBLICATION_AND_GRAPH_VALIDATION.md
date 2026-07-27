@@ -98,6 +98,26 @@ The existing targeting engine then validates the complete graph, including:
 Stable validation codes such as `CYCLIC_PREREQUISITE`, `UNKNOWN_SEGMENT`, and
 `UNKNOWN_VARIANT` are propagated to publication Problem Details.
 
+## Snapshot schema compatibility
+
+Snapshot schema version 1 remains readable and retains its fixed 244-byte
+compatibility vector and SHA-256 checksum. It contains flags and typed variants,
+so decoding it produces an equivalent graph with no prerequisites, rules, or
+segments.
+
+New publications use snapshot schema version 2. The same bounded checksummed
+binary payload now also contains the canonical targeting graph:
+
+- flag prerequisites and expected variants;
+- ordered targeting rules and their typed conditions;
+- reusable segments, inclusions, exclusions, and nested references;
+- string, number, and boolean comparison values.
+
+The evaluator does not reconstruct this graph from mutable rows. It uses the
+graph decoded from the exact current revision payload, so validation,
+publication, checksum verification, and runtime evaluation all refer to the
+same immutable candidate.
+
 ## Tenant and environment scope
 
 The publication service never accepts an organization ID from the caller. It
@@ -137,4 +157,6 @@ The automated suite includes:
 - cyclic prerequisite and unknown segment validation;
 - flag and variant scope validation;
 - failed graph publication atomicity;
+- schema v1 compatibility and deterministic schema v2 graph round-trip;
+- evaluator execution from the graph decoded from the published payload;
 - Flyway migration from V1 through V6.
