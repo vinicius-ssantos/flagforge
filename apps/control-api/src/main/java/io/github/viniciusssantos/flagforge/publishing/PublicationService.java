@@ -56,15 +56,25 @@ public class PublicationService {
     }
 
     @Transactional
-    public PublishedRevision publish(UUID environmentId) {
+    public PublishedRevision publish(UUID environmentId, long expectedVersion) {
         Objects.requireNonNull(environmentId, "environmentId is required");
+        if (expectedVersion < 0) {
+            throw new PublicationException(
+                    PublicationError.INVALID_EXPECTED_VERSION,
+                    "Expected publication version cannot be negative");
+        }
         TenantIdentity identity = authorizationService.require(
                 ControlPlanePermission.ENVIRONMENT_WRITE);
         Environment environment = tenantHierarchyService.findEnvironment(environmentId);
         ensureSameOrganization(identity, environment.organizationId());
         lockEnvironment(environment);
 
-        long revisionNumber = currentRevisionNumber(environment).orElse(0L) + 1;
+        PublicationState state = currentPublicationState(environment);
+        if (state.publicationVersion() != expectedVersion) {
+            throw PublicationException.versionConflict(expectedVersion, state);
+        }
+        long revisionNumber = state.currentRevisionNumber() + 1;
+        long publicationVersion = expectedVersion + 1;
         List<PublishedFlag> flags = compileCandidate(
                 environment.organizationId(),
                 environment.projectId());
@@ -121,6 +131,8 @@ public class PublicationService {
                 revisionId,
                 environment,
                 revisionNumber,
+                expectedVersion,
+                publicationVersion,
                 publishedAt);
 
         return new PublishedRevision(
@@ -129,6 +141,7 @@ public class PublicationService {
                 environment.projectId(),
                 environment.id(),
                 revisionNumber,
+                publicationVersion,
                 PublishedSnapshotCodec.SCHEMA_VERSION,
                 PublishedSnapshotCodec.ALGORITHM_VERSION,
                 encoded.checksum(),
@@ -152,6 +165,7 @@ public class PublicationService {
                        revision.project_id,
                        revision.environment_id,
                        revision.revision_number,
+                       publication.pointer_version,
                        revision.snapshot_schema_version,
                        revision.algorithm_version,
                        revision.checksum,
