@@ -3,6 +3,11 @@ package io.github.viniciusssantos.flagforge;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.Callable;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 
 import io.github.viniciusssantos.flagforge.credentials.SdkCredentialService.CredentialScope;
 import io.github.viniciusssantos.flagforge.credentials.SdkCredentialService.SdkPrincipal;
@@ -15,6 +20,7 @@ import io.github.viniciusssantos.flagforge.flags.FeatureFlagService.FeatureFlag;
 import io.github.viniciusssantos.flagforge.flags.FeatureFlagService.LifecycleType;
 import io.github.viniciusssantos.flagforge.flags.FeatureFlagService.ValueType;
 import io.github.viniciusssantos.flagforge.publishing.PublicationService;
+import io.github.viniciusssantos.flagforge.publishing.PublicationService.PublicationError;
 import io.github.viniciusssantos.flagforge.publishing.PublicationService.PublicationException;
 import io.github.viniciusssantos.flagforge.publishing.PublicationService.PublishedRevision;
 import io.github.viniciusssantos.flagforge.tenancy.Environment;
@@ -70,9 +76,11 @@ class ImmutableConfigurationPublicationIntegrationTests
         MDC.put("correlationId", "publication-correlation-1");
 
         PublishedRevision revision = publicationService.publish(
-                fixture.environment().id());
+                fixture.environment().id(),
+                0);
 
         assertThat(revision.revisionNumber()).isOne();
+        assertThat(revision.publicationVersion()).isOne();
         assertThat(revision.organizationId()).isEqualTo(fixture.organization().id());
         assertThat(revision.projectId()).isEqualTo(fixture.project().id());
         assertThat(revision.environmentId()).isEqualTo(fixture.environment().id());
@@ -92,7 +100,13 @@ class ImmutableConfigurationPublicationIntegrationTests
                 fixture.environment().id());
         assertThat(pointer.get("current_revision_id")).isEqualTo(revision.revisionId());
         assertThat(pointer.get("current_revision_number")).isEqualTo(1L);
-        assertThat(pointer.get("pointer_version")).isEqualTo(0L);
+        assertThat(pointer.get("pointer_version")).isEqualTo(1L);
+
+        PublishedRevision current = publicationService.current(
+                        fixture.environment().id())
+                .orElseThrow();
+        assertThat(current.publicationVersion()).isOne();
+        assertThat(current.revisionId()).isEqualTo(revision.revisionId());
 
         String outboxStatus = jdbcTemplate.queryForObject(
                 "select status from flagforge.configuration_outbox "
@@ -105,7 +119,9 @@ class ImmutableConfigurationPublicationIntegrationTests
     @Test
     void draftEditsRemainInvisibleUntilTheNextPublication() {
         TenantFixture fixture = createFixture("draft-boundary", "actor-owner");
-        PublishedRevision first = publicationService.publish(fixture.environment().id());
+        PublishedRevision first = publicationService.publish(
+                fixture.environment().id(),
+                0);
         SdkPrincipal principal = principal(fixture);
 
         EvaluationSnapshot initial = snapshotProvider.load(principal, "checkout-v2")
@@ -126,7 +142,9 @@ class ImmutableConfigurationPublicationIntegrationTests
         assertThat(beforeRepublish.configurationVersion())
                 .isEqualTo(initial.configurationVersion());
 
-        PublishedRevision second = publicationService.publish(fixture.environment().id());
+        PublishedRevision second = publicationService.publish(
+                fixture.environment().id(),
+                first.publicationVersion());
         EvaluationSnapshot afterRepublish = snapshotProvider.load(
                         principal,
                         "checkout-v2")
@@ -134,6 +152,7 @@ class ImmutableConfigurationPublicationIntegrationTests
 
         assertThat(first.revisionNumber()).isOne();
         assertThat(second.revisionNumber()).isEqualTo(2);
+        assertThat(second.publicationVersion()).isEqualTo(2);
         assertThat(afterRepublish.defaultVariant()).isEqualTo("enabled");
         assertThat(afterRepublish.configurationVersion()).contains("revision-2-");
         assertThat(count("configuration_revisions", fixture.environment().id()))
@@ -141,9 +160,86 @@ class ImmutableConfigurationPublicationIntegrationTests
     }
 
     @Test
+    void twoConcurrentPublicationsFromTheSameVersionProduceOneConflict()
+            throws Exception {
+        TenantFixture fixture = createFixture("concurrent-publication", "actor-owner");
+        CountDownLatch ready = new CountDownLatch(2);
+        CountDownLatch start = new CountDownLatch(1);
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        try {
+            Callable<Object> attempt = () -> {
+                authenticate(fixture.organization().id(), fixture.actorId());
+                ready.countDown();
+                start.await();
+                try {
+                    return publicationService.publish(fixture.environment().id(), 0);
+                } catch (PublicationException exception) {
+                    return exception;
+                } finally {
+                    SecurityContextHolder.clearContext();
+                }
+            };
+
+            Future<Object> first = executor.submit(attempt);
+            Future<Object> second = executor.submit(attempt);
+            ready.await();
+            start.countDown();
+
+            List<Object> results = List.of(first.get(), second.get());
+            assertThat(results).filteredOn(PublishedRevision.class::isInstance).hasSize(1);
+            assertThat(results).filteredOn(PublicationException.class::isInstance).hasSize(1);
+
+            PublicationException conflict = results.stream()
+                    .filter(PublicationException.class::isInstance)
+                    .map(PublicationException.class::cast)
+                    .findFirst()
+                    .orElseThrow();
+            assertThat(conflict.code()).isEqualTo(PublicationError.VERSION_CONFLICT);
+            assertThat(conflict.expectedVersion()).isZero();
+            assertThat(conflict.currentVersion()).isOne();
+            assertThat(conflict.currentRevisionId()).isNotNull();
+            assertThat(conflict.currentRevisionNumber()).isOne();
+            assertThat(conflict.currentChecksum()).matches("[0-9a-f]{64}");
+            assertThat(conflict.currentUpdatedAt()).isNotNull();
+
+            assertThat(count("configuration_revisions", fixture.environment().id())).isOne();
+            assertThat(count("configuration_snapshots", fixture.environment().id())).isOne();
+            assertThat(count("publication_audit_events", fixture.environment().id())).isOne();
+            assertThat(count("configuration_outbox", fixture.environment().id())).isOne();
+        } finally {
+            executor.shutdownNow();
+        }
+    }
+
+    @Test
+    void staleExpectedVersionConflictsBeforeCreatingHistory() {
+        TenantFixture fixture = createFixture("stale-publication", "actor-owner");
+        PublishedRevision current = publicationService.publish(
+                fixture.environment().id(),
+                0);
+
+        PublicationException conflict = assertThrows(
+                PublicationException.class,
+                () -> publicationService.publish(fixture.environment().id(), 0));
+
+        assertThat(conflict.code()).isEqualTo(PublicationError.VERSION_CONFLICT);
+        assertThat(conflict.expectedVersion()).isZero();
+        assertThat(conflict.currentVersion()).isEqualTo(current.publicationVersion());
+        assertThat(conflict.currentRevisionId()).isEqualTo(current.revisionId());
+        assertThat(conflict.currentRevisionNumber()).isEqualTo(current.revisionNumber());
+        assertThat(conflict.currentChecksum()).isEqualTo(current.checksum());
+        assertThat(count("configuration_revisions", fixture.environment().id())).isOne();
+        assertThat(count("configuration_snapshots", fixture.environment().id())).isOne();
+        assertThat(count("publication_audit_events", fixture.environment().id())).isOne();
+        assertThat(count("configuration_outbox", fixture.environment().id())).isOne();
+    }
+
+    @Test
     void failedPublicationLeavesThePreviousRevisionFullyEffective() {
         TenantFixture fixture = createFixture("failed-publication", "actor-owner");
-        PublishedRevision first = publicationService.publish(fixture.environment().id());
+        PublishedRevision first = publicationService.publish(
+                fixture.environment().id(),
+                0);
         SdkPrincipal principal = principal(fixture);
 
         jdbcTemplate.update(
@@ -153,20 +249,22 @@ class ImmutableConfigurationPublicationIntegrationTests
 
         assertThrows(
                 PublicationException.class,
-                () -> publicationService.publish(fixture.environment().id()));
+                () -> publicationService.publish(
+                        fixture.environment().id(),
+                        first.publicationVersion()));
 
-        Long currentRevision = jdbcTemplate.queryForObject(
-                "select current_revision_number "
+        Map<String, Object> currentState = jdbcTemplate.queryForMap(
+                "select current_revision_number, pointer_version "
                         + "from flagforge.environment_publication_state "
                         + "where environment_id = ?",
-                Long.class,
                 fixture.environment().id());
         EvaluationSnapshot effective = snapshotProvider.load(
                         principal,
                         "checkout-v2")
                 .orElseThrow();
 
-        assertThat(currentRevision).isOne();
+        assertThat(currentState.get("current_revision_number")).isEqualTo(1L);
+        assertThat(currentState.get("pointer_version")).isEqualTo(1L);
         assertThat(effective.defaultVariant()).isEqualTo("disabled");
         assertThat(effective.configurationVersion()).contains(first.checksum());
         assertThat(count("configuration_revisions", fixture.environment().id())).isOne();
@@ -178,7 +276,9 @@ class ImmutableConfigurationPublicationIntegrationTests
     @Test
     void publishedHistoryRejectsUpdatesAndDeletesAtTheDatabaseBoundary() {
         TenantFixture fixture = createFixture("immutable-history", "actor-owner");
-        PublishedRevision revision = publicationService.publish(fixture.environment().id());
+        PublishedRevision revision = publicationService.publish(
+                fixture.environment().id(),
+                0);
 
         assertThatThrownBy(() -> jdbcTemplate.update(
                 "update flagforge.configuration_revisions "
@@ -199,6 +299,19 @@ class ImmutableConfigurationPublicationIntegrationTests
     }
 
     @Test
+    void negativeExpectedVersionIsRejected() {
+        TenantFixture fixture = createFixture("negative-version", "actor-owner");
+
+        PublicationException failure = assertThrows(
+                PublicationException.class,
+                () -> publicationService.publish(fixture.environment().id(), -1));
+
+        assertThat(failure.code())
+                .isEqualTo(PublicationError.INVALID_EXPECTED_VERSION);
+        assertThat(count("configuration_revisions", fixture.environment().id())).isZero();
+    }
+
+    @Test
     void viewerCannotPublishConfiguration() {
         TenantFixture fixture = createFixture("publication-rbac", "actor-owner");
         tenantHierarchyService.addMembership("actor-viewer", MembershipRole.VIEWER);
@@ -206,7 +319,7 @@ class ImmutableConfigurationPublicationIntegrationTests
 
         TenantAccessException failure = assertThrows(
                 TenantAccessException.class,
-                () -> publicationService.publish(fixture.environment().id()));
+                () -> publicationService.publish(fixture.environment().id(), 0));
 
         assertThat(failure.reason())
                 .isEqualTo(TenantAccessException.Reason.ACCESS_DENIED);
