@@ -13,12 +13,14 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 
+import io.github.viniciusssantos.flagforge.publishing.PublicationGraphValidator.PublicationGraphException;
 import io.github.viniciusssantos.flagforge.publishing.PublishedSnapshotCodec.EncodedSnapshot;
 import io.github.viniciusssantos.flagforge.publishing.PublishedSnapshotCodec.PublishedFlag;
 import io.github.viniciusssantos.flagforge.publishing.PublishedSnapshotCodec.PublishedSnapshot;
 import io.github.viniciusssantos.flagforge.publishing.PublishedSnapshotCodec.PublishedValueType;
 import io.github.viniciusssantos.flagforge.publishing.PublishedSnapshotCodec.PublishedVariant;
 import io.github.viniciusssantos.flagforge.publishing.PublishedSnapshotCodec.SnapshotCodecException;
+import io.github.viniciusssantos.flagforge.targeting.TargetingEngine.TargetingConfiguration;
 import io.github.viniciusssantos.flagforge.tenancy.ControlPlanePermission;
 import io.github.viniciusssantos.flagforge.tenancy.Environment;
 import io.github.viniciusssantos.flagforge.tenancy.TenantAccessException;
@@ -43,20 +45,31 @@ public class PublicationService {
     private final TenantAuthorizationService authorizationService;
     private final TenantHierarchyService tenantHierarchyService;
     private final PublishedSnapshotCodec snapshotCodec;
+    private final PublicationGraphValidator publicationGraphValidator;
 
     public PublicationService(
             NamedParameterJdbcTemplate jdbcTemplate,
             TenantAuthorizationService authorizationService,
             TenantHierarchyService tenantHierarchyService,
-            PublishedSnapshotCodec snapshotCodec) {
+            PublishedSnapshotCodec snapshotCodec,
+            PublicationGraphValidator publicationGraphValidator) {
         this.jdbcTemplate = jdbcTemplate;
         this.authorizationService = authorizationService;
         this.tenantHierarchyService = tenantHierarchyService;
         this.snapshotCodec = snapshotCodec;
+        this.publicationGraphValidator = publicationGraphValidator;
     }
 
     @Transactional
     public PublishedRevision publish(UUID environmentId, long expectedVersion) {
+        return publish(environmentId, expectedVersion, null);
+    }
+
+    @Transactional
+    public PublishedRevision publish(
+            UUID environmentId,
+            long expectedVersion,
+            TargetingConfiguration targetingConfiguration) {
         Objects.requireNonNull(environmentId, "environmentId is required");
         if (expectedVersion < 0) {
             throw new PublicationException(
@@ -78,6 +91,11 @@ public class PublicationService {
         List<PublishedFlag> flags = compileCandidate(
                 environment.organizationId(),
                 environment.projectId());
+        try {
+            publicationGraphValidator.validate(flags, targetingConfiguration);
+        } catch (PublicationGraphException exception) {
+            throw PublicationException.invalidGraph(exception);
+        }
         PublishedSnapshot snapshot = new PublishedSnapshot(
                 PublishedSnapshotCodec.SCHEMA_VERSION,
                 environment.organizationId(),
@@ -713,16 +731,17 @@ public class PublicationService {
         private final Long currentRevisionNumber;
         private final String currentChecksum;
         private final Instant currentUpdatedAt;
+        private final String validationCode;
 
         public PublicationException(PublicationError code, String message) {
-            this(code, message, null, null, null, null, null, null, null);
+            this(code, message, null, null, null, null, null, null, null, null);
         }
 
         public PublicationException(
                 PublicationError code,
                 String message,
                 Throwable cause) {
-            this(code, message, cause, null, null, null, null, null, null);
+            this(code, message, cause, null, null, null, null, null, null, null);
         }
 
         private PublicationException(
@@ -734,7 +753,8 @@ public class PublicationService {
                 UUID currentRevisionId,
                 Long currentRevisionNumber,
                 String currentChecksum,
-                Instant currentUpdatedAt) {
+                Instant currentUpdatedAt,
+                String validationCode) {
             super(message, cause);
             this.code = Objects.requireNonNull(code, "code is required");
             this.expectedVersion = expectedVersion;
@@ -743,6 +763,22 @@ public class PublicationService {
             this.currentRevisionNumber = currentRevisionNumber;
             this.currentChecksum = currentChecksum;
             this.currentUpdatedAt = currentUpdatedAt;
+            this.validationCode = validationCode;
+        }
+
+        private static PublicationException invalidGraph(
+                PublicationGraphException exception) {
+            return new PublicationException(
+                    PublicationError.INVALID_CONFIGURATION,
+                    "Candidate targeting graph cannot be published",
+                    exception,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    exception.validationCode());
         }
 
         private static PublicationException versionConflict(
@@ -757,7 +793,8 @@ public class PublicationService {
                     state.currentRevisionId(),
                     state.currentRevisionNumber(),
                     state.currentChecksum(),
-                    state.updatedAt());
+                    state.updatedAt(),
+                    null);
         }
 
         public PublicationError code() {
@@ -786,6 +823,10 @@ public class PublicationService {
 
         public Instant currentUpdatedAt() {
             return currentUpdatedAt;
+        }
+
+        public String validationCode() {
+            return validationCode;
         }
     }
 }
