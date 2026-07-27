@@ -1,0 +1,43 @@
+name: Web Console CI
+
+on:
+  pull_request:
+    paths:
+      - "apps/web-console/**"
+      - ".github/workflows/web-console-ci.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "apps/web-console/**"
+      - ".github/workflows/web-console-ci.yml"
+
+concurrency:
+  group: web-console-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Lint, typecheck, test and build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/web-console
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/web-console/package.json
+      - name: Install dependencies
+        run: npm install --ignore-scripts
+      - name: Verify web console
+        env:
+          NEXT_TELEMETRY_DISABLED: "1"
+        run: npm run verify
