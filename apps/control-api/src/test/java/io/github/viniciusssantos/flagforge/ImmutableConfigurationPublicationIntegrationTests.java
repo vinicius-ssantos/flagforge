@@ -2,6 +2,7 @@ package io.github.viniciusssantos.flagforge;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CountDownLatch;
@@ -23,6 +24,9 @@ import io.github.viniciusssantos.flagforge.publishing.PublicationService;
 import io.github.viniciusssantos.flagforge.publishing.PublicationService.PublicationError;
 import io.github.viniciusssantos.flagforge.publishing.PublicationService.PublicationException;
 import io.github.viniciusssantos.flagforge.publishing.PublicationService.PublishedRevision;
+import io.github.viniciusssantos.flagforge.targeting.TargetingEngine.FlagTarget;
+import io.github.viniciusssantos.flagforge.targeting.TargetingEngine.Prerequisite;
+import io.github.viniciusssantos.flagforge.targeting.TargetingEngine.TargetingConfiguration;
 import io.github.viniciusssantos.flagforge.tenancy.Environment;
 import io.github.viniciusssantos.flagforge.tenancy.MembershipRole;
 import io.github.viniciusssantos.flagforge.tenancy.Organization;
@@ -271,6 +275,35 @@ class ImmutableConfigurationPublicationIntegrationTests
         assertThat(count("configuration_snapshots", fixture.environment().id())).isOne();
         assertThat(count("publication_audit_events", fixture.environment().id())).isOne();
         assertThat(count("configuration_outbox", fixture.environment().id())).isOne();
+    }
+
+    @Test
+    void cyclicPrerequisiteGraphLeavesNoPublicationHistory() {
+        TenantFixture fixture = createFixture("cyclic-graph", "actor-owner");
+        TargetingConfiguration cyclic = new TargetingConfiguration(
+                List.of(new FlagTarget(
+                        "checkout-v2",
+                        Set.of("disabled", "enabled"),
+                        "disabled",
+                        List.of(new Prerequisite("checkout-v2", "enabled")),
+                        List.of())),
+                List.of());
+
+        PublicationException failure = assertThrows(
+                PublicationException.class,
+                () -> publicationService.publish(
+                        fixture.environment().id(),
+                        0,
+                        cyclic));
+
+        assertThat(failure.code())
+                .isEqualTo(PublicationError.INVALID_CONFIGURATION);
+        assertThat(failure.validationCode())
+                .isEqualTo("CYCLIC_PREREQUISITE");
+        assertThat(count("configuration_revisions", fixture.environment().id())).isZero();
+        assertThat(count("configuration_snapshots", fixture.environment().id())).isZero();
+        assertThat(count("publication_audit_events", fixture.environment().id())).isZero();
+        assertThat(count("configuration_outbox", fixture.environment().id())).isZero();
     }
 
     @Test
