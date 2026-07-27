@@ -14,7 +14,6 @@ import io.github.viniciusssantos.flagforge.publishing.PublishedSnapshotCodec.Pub
 import io.github.viniciusssantos.flagforge.publishing.PublishedSnapshotCodec.SnapshotCodecException;
 import io.github.viniciusssantos.flagforge.targeting.TargetingEngine.EqualityCondition;
 import io.github.viniciusssantos.flagforge.targeting.TargetingEngine.FlagTarget;
-import io.github.viniciusssantos.flagforge.targeting.TargetingEngine.NumberValue;
 import io.github.viniciusssantos.flagforge.targeting.TargetingEngine.NumericCondition;
 import io.github.viniciusssantos.flagforge.targeting.TargetingEngine.NumericOperator;
 import io.github.viniciusssantos.flagforge.targeting.TargetingEngine.Prerequisite;
