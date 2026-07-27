@@ -24,9 +24,15 @@ import io.github.viniciusssantos.flagforge.publishing.PublicationService;
 import io.github.viniciusssantos.flagforge.publishing.PublicationService.PublicationError;
 import io.github.viniciusssantos.flagforge.publishing.PublicationService.PublicationException;
 import io.github.viniciusssantos.flagforge.publishing.PublicationService.PublishedRevision;
+import io.github.viniciusssantos.flagforge.targeting.TargetingEngine;
+import io.github.viniciusssantos.flagforge.targeting.TargetingEngine.EqualityCondition;
+import io.github.viniciusssantos.flagforge.targeting.TargetingEngine.EvaluationContext;
+import io.github.viniciusssantos.flagforge.targeting.TargetingEngine.EvaluationReason;
 import io.github.viniciusssantos.flagforge.targeting.TargetingEngine.FlagTarget;
 import io.github.viniciusssantos.flagforge.targeting.TargetingEngine.Prerequisite;
+import io.github.viniciusssantos.flagforge.targeting.TargetingEngine.StringValue;
 import io.github.viniciusssantos.flagforge.targeting.TargetingEngine.TargetingConfiguration;
+import io.github.viniciusssantos.flagforge.targeting.TargetingEngine.TargetingRule;
 import io.github.viniciusssantos.flagforge.tenancy.Environment;
 import io.github.viniciusssantos.flagforge.tenancy.MembershipRole;
 import io.github.viniciusssantos.flagforge.tenancy.Organization;
@@ -275,6 +281,44 @@ class ImmutableConfigurationPublicationIntegrationTests
         assertThat(count("configuration_snapshots", fixture.environment().id())).isOne();
         assertThat(count("publication_audit_events", fixture.environment().id())).isOne();
         assertThat(count("configuration_outbox", fixture.environment().id())).isOne();
+    }
+
+    @Test
+    void evaluatorUsesTheGraphStoredInsideThePublishedSnapshot() {
+        TenantFixture fixture = createFixture("published-graph", "actor-owner");
+        TargetingConfiguration graph = new TargetingConfiguration(
+                List.of(new FlagTarget(
+                        "checkout-v2",
+                        Set.of("disabled", "enabled"),
+                        "disabled",
+                        List.of(),
+                        List.of(new TargetingRule(
+                                "internal-users",
+                                10,
+                                List.of(new EqualityCondition(
+                                        "group",
+                                        new StringValue("internal"))),
+                                "enabled")))),
+                List.of());
+
+        publicationService.publish(fixture.environment().id(), 0, graph);
+        EvaluationSnapshot snapshot = snapshotProvider.load(
+                        principal(fixture),
+                        "checkout-v2")
+                .orElseThrow();
+        var result = TargetingEngine.evaluate(
+                snapshot.targetingConfiguration(),
+                "checkout-v2",
+                new EvaluationContext(
+                        "user-42",
+                        Map.of("group", new StringValue("internal"))));
+
+        assertThat(result.reason()).isEqualTo(EvaluationReason.TARGETING_MATCH);
+        assertThat(result.variantKey()).isEqualTo("enabled");
+        assertThat(result.matchedRuleKey()).isEqualTo("internal-users");
+        assertThat(snapshot.targetingConfiguration().flags().getFirst().rules())
+                .extracting(TargetingRule::key)
+                .containsExactly("internal-users");
     }
 
     @Test
