@@ -36,6 +36,9 @@ class SecurityConfiguration {
                         .hasAuthority(
                                 SdkCredentialAuthenticationFilter
                                         .EVALUATE_AUTHORITY)
+                        .requestMatchers(
+                                "/api/v1/environments/*/publication")
+                        .authenticated()
                         .anyRequest().denyAll())
                 .exceptionHandling(exceptions -> exceptions
                         .authenticationEntryPoint(problemDetailsResponseWriter::writeUnauthorized)
