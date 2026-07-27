@@ -91,8 +91,11 @@ public class PublicationService {
         List<PublishedFlag> flags = compileCandidate(
                 environment.organizationId(),
                 environment.projectId());
+        TargetingConfiguration validatedConfiguration;
         try {
-            publicationGraphValidator.validate(flags, targetingConfiguration);
+            validatedConfiguration = publicationGraphValidator.validate(
+                    flags,
+                    targetingConfiguration);
         } catch (PublicationGraphException exception) {
             throw PublicationException.invalidGraph(exception);
         }
@@ -103,7 +106,8 @@ public class PublicationService {
                 environment.id(),
                 revisionNumber,
                 PublishedSnapshotCodec.ALGORITHM_VERSION,
-                flags);
+                flags,
+                validatedConfiguration);
 
         EncodedSnapshot encoded;
         try {
