@@ -56,10 +56,10 @@ class PublicationApiIntegrationTests extends PostgreSqlIntegrationTestSupport {
         String endpoint = "/api/v1/environments/"
                 + fixture.environment().id()
                 + "/publication";
-        Authentication authentication = authentication(fixture);
+        Authentication principalAuthentication = tenantAuthentication(fixture);
 
         mockMvc.perform(post(endpoint)
-                        .with(authentication(authentication))
+                        .with(authentication(principalAuthentication))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"expectedVersion\":0}"))
                 .andExpect(status().isOk())
@@ -72,13 +72,13 @@ class PublicationApiIntegrationTests extends PostgreSqlIntegrationTestSupport {
                 .andExpect(jsonPath("$.checksum").isNotEmpty());
 
         mockMvc.perform(get(endpoint)
-                        .with(authentication(authentication)))
+                        .with(authentication(principalAuthentication)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.revisionNumber").value(1))
                 .andExpect(jsonPath("$.publicationVersion").value(1));
 
         mockMvc.perform(post(endpoint)
-                        .with(authentication(authentication))
+                        .with(authentication(principalAuthentication))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"expectedVersion\":0}"))
                 .andExpect(status().isConflict())
@@ -109,7 +109,7 @@ class PublicationApiIntegrationTests extends PostgreSqlIntegrationTestSupport {
                 + "/publication";
 
         mockMvc.perform(post(endpoint)
-                        .with(authentication(authentication(fixture)))
+                        .with(authentication(tenantAuthentication(fixture)))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{}"))
                 .andExpect(status().isBadRequest())
@@ -168,7 +168,7 @@ class PublicationApiIntegrationTests extends PostgreSqlIntegrationTestSupport {
         return new TenantFixture(organization, environment, actorId);
     }
 
-    private static Authentication authentication(TenantFixture fixture) {
+    private static Authentication tenantAuthentication(TenantFixture fixture) {
         return UsernamePasswordAuthenticationToken.authenticated(
                 new TenantPrincipal(
                         fixture.organization().id(),
