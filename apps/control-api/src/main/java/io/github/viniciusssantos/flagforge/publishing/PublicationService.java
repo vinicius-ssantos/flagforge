@@ -27,6 +27,7 @@ import io.github.viniciusssantos.flagforge.tenancy.TenantHierarchyService;
 import io.github.viniciusssantos.flagforge.tenancy.TenantIdentity;
 
 import org.slf4j.MDC;
+import org.springframework.jdbc.core.RowCallbackHandler;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -203,7 +204,7 @@ public class PublicationService {
         jdbcTemplate.query(
                 flagsSql,
                 parameters,
-                resultSet -> {
+                (RowCallbackHandler) resultSet -> {
                     UUID id = resultSet.getObject("id", UUID.class);
                     flags.put(
                             id,
@@ -236,7 +237,7 @@ public class PublicationService {
         jdbcTemplate.query(
                 variantsSql,
                 parameters,
-                resultSet -> addVariant(flags, resultSet));
+                (RowCallbackHandler) resultSet -> addVariant(flags, resultSet));
 
         List<PublishedFlag> compiled = new ArrayList<>(flags.size());
         for (MutableFlag flag : flags.values()) {
