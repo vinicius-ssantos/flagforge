@@ -213,7 +213,7 @@ class EvaluationApiIntegrationTests extends PostgreSqlIntegrationTestSupport {
                 List.of(
                         new BooleanVariant("disabled", false),
                         new BooleanVariant("enabled", true))));
-        publicationService.publish(environment.id());
+        publicationService.publish(environment.id(), 0);
         IssuedCredential credential = sdkCredentialService.create(
                 environment.id(),
                 "evaluation-client");
