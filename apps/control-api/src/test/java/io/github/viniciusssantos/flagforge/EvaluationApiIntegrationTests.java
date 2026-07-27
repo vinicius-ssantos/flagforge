@@ -10,6 +10,7 @@ import io.github.viniciusssantos.flagforge.flags.FeatureFlagService.BooleanVaria
 import io.github.viniciusssantos.flagforge.flags.FeatureFlagService.CreateFlagCommand;
 import io.github.viniciusssantos.flagforge.flags.FeatureFlagService.LifecycleType;
 import io.github.viniciusssantos.flagforge.flags.FeatureFlagService.ValueType;
+import io.github.viniciusssantos.flagforge.publishing.PublicationService;
 import io.github.viniciusssantos.flagforge.tenancy.Environment;
 import io.github.viniciusssantos.flagforge.tenancy.Organization;
 import io.github.viniciusssantos.flagforge.tenancy.Project;
@@ -61,6 +62,9 @@ class EvaluationApiIntegrationTests extends PostgreSqlIntegrationTestSupport {
 
     @Autowired
     private SdkCredentialService sdkCredentialService;
+
+    @Autowired
+    private PublicationService publicationService;
 
     @AfterEach
     void clearSecurityContext() {
@@ -209,6 +213,7 @@ class EvaluationApiIntegrationTests extends PostgreSqlIntegrationTestSupport {
                 List.of(
                         new BooleanVariant("disabled", false),
                         new BooleanVariant("enabled", true))));
+        publicationService.publish(environment.id());
         IssuedCredential credential = sdkCredentialService.create(
                 environment.id(),
                 "evaluation-client");
