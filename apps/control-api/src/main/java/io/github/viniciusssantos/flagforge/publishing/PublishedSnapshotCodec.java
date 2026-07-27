@@ -542,6 +542,8 @@ public final class PublishedSnapshotCodec {
             case LESS_THAN_OR_EQUAL -> 3;
             case GREATER_THAN -> 4;
             case GREATER_THAN_OR_EQUAL -> 5;
+            default -> throw new IllegalStateException(
+                    "Numeric operator is unsupported");
         };
     }
 
@@ -563,6 +565,8 @@ public final class PublishedSnapshotCodec {
             case LESS_THAN_OR_EQUAL -> 3;
             case GREATER_THAN -> 4;
             case GREATER_THAN_OR_EQUAL -> 5;
+            default -> throw new IllegalStateException(
+                    "Semantic version operator is unsupported");
         };
     }
 
