@@ -150,6 +150,8 @@ public final class PublishedSnapshotCodec {
                         output,
                         variant.stringValue(),
                         MAX_STRING_VALUE_BYTES);
+                default -> throw new IllegalStateException(
+                        "Published variant type is unsupported");
             }
         }
     }
@@ -319,6 +321,8 @@ public final class PublishedSnapshotCodec {
                     throw invalidConfiguration("String variant payload is outside its bounds");
                 }
             }
+            default -> throw new IllegalStateException(
+                    "Published variant type is unsupported");
         }
     }
 
