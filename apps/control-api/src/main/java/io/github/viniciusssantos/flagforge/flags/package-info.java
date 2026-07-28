@@ -1,4 +1,4 @@
 @org.springframework.modulith.ApplicationModule(
         displayName = "Feature Flags",
-        allowedDependencies = "tenancy")
+        allowedDependencies = {"tenancy", "audit"})
 package io.github.viniciusssantos.flagforge.flags;
