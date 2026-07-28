@@ -18,6 +18,10 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.regex.Pattern;
 
+import io.github.viniciusssantos.flagforge.audit.AuditTrailService;
+import io.github.viniciusssantos.flagforge.audit.AuditTrailService.AuditAction;
+import io.github.viniciusssantos.flagforge.audit.AuditTrailService.AuditCommand;
+import io.github.viniciusssantos.flagforge.audit.AuditTrailService.AuditResourceType;
 import io.github.viniciusssantos.flagforge.tenancy.ControlPlanePermission;
 import io.github.viniciusssantos.flagforge.tenancy.Project;
 import io.github.viniciusssantos.flagforge.tenancy.TenantAccessException;
@@ -42,14 +46,17 @@ public class FeatureFlagService {
     private final NamedParameterJdbcTemplate jdbcTemplate;
     private final TenantAuthorizationService authorizationService;
     private final TenantHierarchyService tenantHierarchyService;
+    private final AuditTrailService auditTrailService;
 
     public FeatureFlagService(
             NamedParameterJdbcTemplate jdbcTemplate,
             TenantAuthorizationService authorizationService,
-            TenantHierarchyService tenantHierarchyService) {
+            TenantHierarchyService tenantHierarchyService,
+            AuditTrailService auditTrailService) {
         this.jdbcTemplate = jdbcTemplate;
         this.authorizationService = authorizationService;
         this.tenantHierarchyService = tenantHierarchyService;
+        this.auditTrailService = auditTrailService;
     }
 
     @Transactional
@@ -137,6 +144,21 @@ public class FeatureFlagService {
                             .addValue("createdAt", Timestamp.from(now))
                             .addValue("updatedAt", Timestamp.from(now)));
             insertVariants(identity.organizationId(), project.id(), flagId, variants, now);
+            auditTrailService.append(new AuditCommand(
+                    identity.organizationId(),
+                    project.id(),
+                    null,
+                    identity.actorId(),
+                    AuditAction.FEATURE_FLAG_CREATED,
+                    AuditResourceType.FEATURE_FLAG,
+                    flagId,
+                    null,
+                    null,
+                    Map.of(
+                            "flagKey", key,
+                            "lifecycleType", lifecycleType.name(),
+                            "valueType", valueType.name()),
+                    now));
         } catch (DuplicateKeyException exception) {
             throw new FlagValidationException(
                     ValidationCode.FLAG_KEY_ALREADY_EXISTS,
@@ -243,6 +265,21 @@ public class FeatureFlagService {
                     ValidationCode.CONCURRENT_MODIFICATION,
                     "Feature flag changed concurrently");
         }
+        auditTrailService.append(new AuditCommand(
+                identity.organizationId(),
+                project.id(),
+                null,
+                identity.actorId(),
+                AuditAction.FEATURE_FLAG_ARCHIVED,
+                AuditResourceType.FEATURE_FLAG,
+                flagId,
+                null,
+                null,
+                Map.of(
+                        "flagKey", current.key(),
+                        "previousState", current.state().name(),
+                        "newState", FlagState.ARCHIVED.name()),
+                archivedAt));
 
         return new FeatureFlag(
                 current.id(),
