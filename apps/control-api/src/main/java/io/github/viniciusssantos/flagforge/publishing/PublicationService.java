@@ -434,6 +434,9 @@ public class PublicationService {
                     :projectId,
                     :environmentId,
                     :revisionNumber,
+                    :revisionKind,
+                    :sourceRevisionId,
+                    :sourceRevisionNumber,
                     :schemaVersion,
                     :algorithmVersion,
                     :checksum,
@@ -503,6 +506,7 @@ public class PublicationService {
             UUID revisionId,
             Environment environment,
             long revisionNumber,
+            String action,
             String actorId,
             String correlationId,
             Instant publishedAt) {
@@ -536,7 +540,7 @@ public class PublicationService {
                 baseParameters(revisionId, environment, revisionNumber, publishedAt)
                         .addValue("auditId", UUID.randomUUID())
                         .addValue("actorId", actorId)
-                        .addValue("action", PUBLISHED_EVENT)
+                        .addValue("action", action)
                         .addValue("correlationId", correlationId));
     }
 
