@@ -44,6 +44,8 @@ public class PublicationService {
 
     private static final String CORRELATION_ID_MDC_KEY = "correlationId";
     private static final String PUBLISHED_EVENT = "CONFIGURATION_PUBLISHED";
+    private static final String ROLLED_BACK_EVENT =
+            "CONFIGURATION_ROLLED_BACK";
 
     private final NamedParameterJdbcTemplate jdbcTemplate;
     private final TenantAuthorizationService authorizationService;
@@ -192,6 +194,141 @@ public class PublicationService {
                 RevisionKind.PUBLISH,
                 null,
                 null,
+                PublishedSnapshotCodec.SCHEMA_VERSION,
+                PublishedSnapshotCodec.ALGORITHM_VERSION,
+                encoded.checksum(),
+                encoded.payload().length,
+                identity.actorId(),
+                correlationId,
+                publishedAt);
+    }
+
+    @Transactional
+    public PublishedRevision rollback(
+            UUID environmentId,
+            long sourceRevisionNumber,
+            long expectedVersion) {
+        Objects.requireNonNull(environmentId, "environmentId is required");
+        if (sourceRevisionNumber <= 0) {
+            throw new PublicationException(
+                    PublicationError.INVALID_ROLLBACK_SOURCE,
+                    "Rollback source revision must be positive");
+        }
+        if (expectedVersion < 0) {
+            throw new PublicationException(
+                    PublicationError.INVALID_EXPECTED_VERSION,
+                    "Expected publication version cannot be negative");
+        }
+        TenantIdentity identity = authorizationService.require(
+                ControlPlanePermission.ENVIRONMENT_WRITE);
+        Environment environment = tenantHierarchyService.findEnvironment(environmentId);
+        ensureSameOrganization(identity, environment.organizationId());
+        lockEnvironment(environment);
+
+        PublicationState state = currentPublicationState(environment);
+        if (state.publicationVersion() != expectedVersion) {
+            throw PublicationException.versionConflict(expectedVersion, state);
+        }
+        if (state.currentRevisionNumber() == 0
+                || sourceRevisionNumber >= state.currentRevisionNumber()) {
+            throw new PublicationException(
+                    PublicationError.INVALID_ROLLBACK_SOURCE,
+                    "Rollback source must be an older revision from this environment");
+        }
+
+        HistoricalSnapshot source = loadHistoricalSnapshot(
+                environment,
+                sourceRevisionNumber);
+        long revisionNumber = state.currentRevisionNumber() + 1;
+        long publicationVersion = expectedVersion + 1;
+        PublishedSnapshot restored = new PublishedSnapshot(
+                PublishedSnapshotCodec.SCHEMA_VERSION,
+                environment.organizationId(),
+                environment.projectId(),
+                environment.id(),
+                revisionNumber,
+                PublishedSnapshotCodec.ALGORITHM_VERSION,
+                source.document().flags(),
+                source.document().targetingConfiguration());
+        EncodedSnapshot encoded;
+        try {
+            encoded = snapshotCodec.encode(restored);
+        } catch (SnapshotCodecException exception) {
+            throw new PublicationException(
+                    PublicationError.INVALID_CONFIGURATION,
+                    "Historical configuration cannot be restored",
+                    exception);
+        }
+
+        UUID revisionId = UUID.randomUUID();
+        Instant publishedAt = now();
+        String correlationId = MDC.get(CORRELATION_ID_MDC_KEY);
+        insertRevision(
+                revisionId,
+                environment,
+                revisionNumber,
+                RevisionKind.ROLLBACK,
+                source.revisionId(),
+                source.revisionNumber(),
+                encoded,
+                identity.actorId(),
+                correlationId,
+                publishedAt);
+        insertSnapshot(
+                revisionId,
+                environment,
+                revisionNumber,
+                encoded,
+                publishedAt);
+        insertAuditEvent(
+                revisionId,
+                environment,
+                revisionNumber,
+                ROLLED_BACK_EVENT,
+                identity.actorId(),
+                correlationId,
+                publishedAt);
+        auditTrailService.append(new AuditCommand(
+                environment.organizationId(),
+                environment.projectId(),
+                environment.id(),
+                identity.actorId(),
+                AuditAction.CONFIGURATION_ROLLED_BACK,
+                AuditResourceType.CONFIGURATION_REVISION,
+                revisionId,
+                revisionId,
+                revisionNumber,
+                Map.of(
+                        "checksum", encoded.checksum(),
+                        "revisionKind", RevisionKind.ROLLBACK.name(),
+                        "sourceChecksum", source.checksum(),
+                        "sourceRevisionNumber",
+                        Long.toString(source.revisionNumber())),
+                publishedAt));
+        insertOutboxEvent(
+                revisionId,
+                environment,
+                revisionNumber,
+                encoded.checksum(),
+                publishedAt);
+        moveCurrentPointer(
+                revisionId,
+                environment,
+                revisionNumber,
+                expectedVersion,
+                publicationVersion,
+                publishedAt);
+
+        return new PublishedRevision(
+                revisionId,
+                environment.organizationId(),
+                environment.projectId(),
+                environment.id(),
+                revisionNumber,
+                publicationVersion,
+                RevisionKind.ROLLBACK,
+                source.revisionId(),
+                source.revisionNumber(),
                 PublishedSnapshotCodec.SCHEMA_VERSION,
                 PublishedSnapshotCodec.ALGORITHM_VERSION,
                 encoded.checksum(),
