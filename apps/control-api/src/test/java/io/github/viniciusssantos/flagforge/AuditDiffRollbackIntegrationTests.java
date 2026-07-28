@@ -248,6 +248,31 @@ class AuditDiffRollbackIntegrationTests extends PostgreSqlIntegrationTestSupport
     }
 
     @Test
+    void featureFlagArchiveIsRecordedAsAppendOnlyHistory() {
+        TenantFixture fixture = createFixture("flag-archive-audit", "actor-owner");
+
+        FeatureFlag archived = featureFlagService.archive(
+                fixture.project().id(),
+                fixture.flag().id());
+
+        assertThat(archived.state())
+                .isEqualTo(FeatureFlagService.FlagState.ARCHIVED);
+        List<String> actions = jdbcTemplate.queryForList(
+                "select action from flagforge.audit_events "
+                        + "where organization_id = ? "
+                        + "and project_id = ? "
+                        + "and resource_id = ? "
+                        + "order by occurred_at",
+                String.class,
+                fixture.organization().id(),
+                fixture.project().id(),
+                fixture.flag().id());
+        assertThat(actions).containsExactly(
+                AuditAction.FEATURE_FLAG_CREATED.name(),
+                AuditAction.FEATURE_FLAG_ARCHIVED.name());
+    }
+
+    @Test
     void credentialAuditNeverStoresPlaintextHashOrKeyPrefix() {
         TenantFixture fixture = createFixture("credential-audit", "actor-owner");
         IssuedCredential issued = sdkCredentialService.create(
