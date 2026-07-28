@@ -405,6 +405,9 @@ public class PublicationService {
             UUID revisionId,
             Environment environment,
             long revisionNumber,
+            RevisionKind revisionKind,
+            UUID sourceRevisionId,
+            Long sourceRevisionNumber,
             EncodedSnapshot encoded,
             String actorId,
             String correlationId,
@@ -416,6 +419,9 @@ public class PublicationService {
                     project_id,
                     environment_id,
                     revision_number,
+                    revision_kind,
+                    source_revision_id,
+                    source_revision_number,
                     snapshot_schema_version,
                     algorithm_version,
                     checksum,
@@ -439,6 +445,9 @@ public class PublicationService {
         jdbcTemplate.update(
                 sql,
                 baseParameters(revisionId, environment, revisionNumber, publishedAt)
+                        .addValue("revisionKind", revisionKind.name())
+                        .addValue("sourceRevisionId", sourceRevisionId)
+                        .addValue("sourceRevisionNumber", sourceRevisionNumber)
                         .addValue("schemaVersion", PublishedSnapshotCodec.SCHEMA_VERSION)
                         .addValue("algorithmVersion", PublishedSnapshotCodec.ALGORITHM_VERSION)
                         .addValue("checksum", encoded.checksum())
