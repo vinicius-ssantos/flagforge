@@ -17,6 +17,10 @@ import java.util.UUID;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import io.github.viniciusssantos.flagforge.audit.AuditTrailService;
+import io.github.viniciusssantos.flagforge.audit.AuditTrailService.AuditAction;
+import io.github.viniciusssantos.flagforge.audit.AuditTrailService.AuditCommand;
+import io.github.viniciusssantos.flagforge.audit.AuditTrailService.AuditResourceType;
 import io.github.viniciusssantos.flagforge.tenancy.ControlPlanePermission;
 import io.github.viniciusssantos.flagforge.tenancy.Environment;
 import io.github.viniciusssantos.flagforge.tenancy.TenantAccessException;
@@ -61,15 +65,18 @@ public class SdkCredentialService {
     private final NamedParameterJdbcTemplate jdbcTemplate;
     private final TenantAuthorizationService authorizationService;
     private final TenantHierarchyService tenantHierarchyService;
+    private final AuditTrailService auditTrailService;
     private final SecureRandom secureRandom;
 
     public SdkCredentialService(
             NamedParameterJdbcTemplate jdbcTemplate,
             TenantAuthorizationService authorizationService,
-            TenantHierarchyService tenantHierarchyService) {
+            TenantHierarchyService tenantHierarchyService,
+            AuditTrailService auditTrailService) {
         this.jdbcTemplate = jdbcTemplate;
         this.authorizationService = authorizationService;
         this.tenantHierarchyService = tenantHierarchyService;
+        this.auditTrailService = auditTrailService;
         this.secureRandom = new SecureRandom();
     }
 
