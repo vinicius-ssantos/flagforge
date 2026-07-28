@@ -538,6 +538,69 @@ public class PublicationService {
                 .orElseGet(PublicationState::unpublished);
     }
 
+    private HistoricalSnapshot loadHistoricalSnapshot(
+            Environment environment,
+            long revisionNumber) {
+        String sql = """
+                SELECT revision.id,
+                       revision.revision_number,
+                       revision.checksum,
+                       snapshot.payload
+                FROM flagforge.configuration_revisions revision
+                JOIN flagforge.configuration_snapshots snapshot
+                  ON snapshot.organization_id = revision.organization_id
+                 AND snapshot.project_id = revision.project_id
+                 AND snapshot.environment_id = revision.environment_id
+                 AND snapshot.revision_id = revision.id
+                 AND snapshot.revision_number = revision.revision_number
+                WHERE revision.organization_id = :organizationId
+                  AND revision.project_id = :projectId
+                  AND revision.environment_id = :environmentId
+                  AND revision.revision_number = :revisionNumber
+                """;
+        HistoricalSnapshotRow row = jdbcTemplate.query(
+                        sql,
+                        Map.of(
+                                "organizationId", environment.organizationId(),
+                                "projectId", environment.projectId(),
+                                "environmentId", environment.id(),
+                                "revisionNumber", revisionNumber),
+                        (resultSet, rowNumber) -> new HistoricalSnapshotRow(
+                                resultSet.getObject("id", UUID.class),
+                                resultSet.getLong("revision_number"),
+                                resultSet.getString("checksum"),
+                                resultSet.getBytes("payload")))
+                .stream()
+                .findFirst()
+                .orElseThrow(() -> new PublicationException(
+                        PublicationError.INVALID_ROLLBACK_SOURCE,
+                        "Rollback source revision does not exist in this environment"));
+        PublishedSnapshot document;
+        try {
+            document = snapshotCodec.decode(row.payload(), row.checksum());
+        } catch (SnapshotCodecException exception) {
+            throw new PublicationException(
+                    PublicationError.INVALID_CONFIGURATION,
+                    "Historical configuration snapshot is invalid",
+                    exception);
+        }
+        boolean identityMatches = environment.organizationId().equals(
+                        document.organizationId())
+                && environment.projectId().equals(document.projectId())
+                && environment.id().equals(document.environmentId())
+                && row.revisionNumber() == document.revisionNumber();
+        if (!identityMatches) {
+            throw new PublicationException(
+                    PublicationError.INVALID_CONFIGURATION,
+                    "Historical snapshot identity does not match its revision");
+        }
+        return new HistoricalSnapshot(
+                row.revisionId(),
+                row.revisionNumber(),
+                row.checksum(),
+                document);
+    }
+
     private void insertRevision(
             UUID revisionId,
             Environment environment,
@@ -873,6 +936,29 @@ public class PublicationService {
                 PublicationError.INVALID_CONFIGURATION,
                 message,
                 cause);
+    }
+
+    private record HistoricalSnapshotRow(
+            UUID revisionId,
+            long revisionNumber,
+            String checksum,
+            byte[] payload) {
+
+        private HistoricalSnapshotRow {
+            payload = payload.clone();
+        }
+
+        @Override
+        public byte[] payload() {
+            return payload.clone();
+        }
+    }
+
+    private record HistoricalSnapshot(
+            UUID revisionId,
+            long revisionNumber,
+            String checksum,
+            PublishedSnapshot document) {
     }
 
     private record MutableFlag(
