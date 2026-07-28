@@ -86,7 +86,26 @@ public class SdkCredentialService {
                 ControlPlanePermission.SDK_CREDENTIAL_MANAGE);
         Environment environment = tenantHierarchyService.findEnvironment(environmentId);
         ensureSameOrganization(identity, environment.organizationId());
-        return issue(identity.organizationId(), environment.id(), name, null);
+        IssuedCredential issued = issue(
+                identity.organizationId(),
+                environment.id(),
+                name,
+                null);
+        auditTrailService.append(new AuditCommand(
+                identity.organizationId(),
+                environment.projectId(),
+                environment.id(),
+                identity.actorId(),
+                AuditAction.SDK_CREDENTIAL_CREATED,
+                AuditResourceType.SDK_CREDENTIAL,
+                issued.metadata().id(),
+                null,
+                null,
+                Map.of(
+                        "scope", issued.metadata().scope().name(),
+                        "status", issued.metadata().status().name()),
+                issued.metadata().createdAt()));
+        return issued;
     }
 
     @Transactional(readOnly = true)
