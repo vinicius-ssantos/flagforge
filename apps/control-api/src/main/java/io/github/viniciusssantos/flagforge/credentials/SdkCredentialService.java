@@ -143,13 +143,31 @@ public class SdkCredentialService {
         if (current.status() != CredentialStatus.ACTIVE) {
             throw new IllegalStateException("SDK credential is not active");
         }
+        Environment environment = tenantHierarchyService.findEnvironment(
+                current.environmentId());
+        ensureSameOrganization(identity, environment.organizationId());
 
         IssuedCredential replacement = issue(
                 current.organizationId(),
                 current.environmentId(),
                 current.name(),
                 current.id());
-        revokeRow(current);
+        CredentialRow revoked = revokeRow(current);
+        auditTrailService.append(new AuditCommand(
+                identity.organizationId(),
+                environment.projectId(),
+                environment.id(),
+                identity.actorId(),
+                AuditAction.SDK_CREDENTIAL_ROTATED,
+                AuditResourceType.SDK_CREDENTIAL,
+                current.id(),
+                null,
+                null,
+                Map.of(
+                        "replacementId", replacement.metadata().id().toString(),
+                        "previousStatus", current.status().name(),
+                        "newStatus", revoked.status().name()),
+                revoked.revokedAt()));
         return replacement;
     }
 
