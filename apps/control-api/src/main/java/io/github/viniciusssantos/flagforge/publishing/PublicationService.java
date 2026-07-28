@@ -13,6 +13,10 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 
+import io.github.viniciusssantos.flagforge.audit.AuditTrailService;
+import io.github.viniciusssantos.flagforge.audit.AuditTrailService.AuditAction;
+import io.github.viniciusssantos.flagforge.audit.AuditTrailService.AuditCommand;
+import io.github.viniciusssantos.flagforge.audit.AuditTrailService.AuditResourceType;
 import io.github.viniciusssantos.flagforge.publishing.PublicationGraphValidator.PublicationGraphException;
 import io.github.viniciusssantos.flagforge.publishing.PublishedSnapshotCodec.EncodedSnapshot;
 import io.github.viniciusssantos.flagforge.publishing.PublishedSnapshotCodec.PublishedFlag;
@@ -46,18 +50,21 @@ public class PublicationService {
     private final TenantHierarchyService tenantHierarchyService;
     private final PublishedSnapshotCodec snapshotCodec;
     private final PublicationGraphValidator publicationGraphValidator;
+    private final AuditTrailService auditTrailService;
 
     public PublicationService(
             NamedParameterJdbcTemplate jdbcTemplate,
             TenantAuthorizationService authorizationService,
             TenantHierarchyService tenantHierarchyService,
             PublishedSnapshotCodec snapshotCodec,
-            PublicationGraphValidator publicationGraphValidator) {
+            PublicationGraphValidator publicationGraphValidator,
+            AuditTrailService auditTrailService) {
         this.jdbcTemplate = jdbcTemplate;
         this.authorizationService = authorizationService;
         this.tenantHierarchyService = tenantHierarchyService;
         this.snapshotCodec = snapshotCodec;
         this.publicationGraphValidator = publicationGraphValidator;
+        this.auditTrailService = auditTrailService;
     }
 
     @Transactional
