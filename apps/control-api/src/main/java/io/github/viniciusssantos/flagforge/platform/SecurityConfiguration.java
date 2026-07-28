@@ -37,7 +37,11 @@ class SecurityConfiguration {
                                 SdkCredentialAuthenticationFilter
                                         .EVALUATE_AUTHORITY)
                         .requestMatchers(
-                                "/api/v1/environments/*/publication")
+                                "/api/v1/environments/*/publication",
+                                "/api/v1/environments/*/audit",
+                                "/api/v1/environments/*/revisions",
+                                "/api/v1/environments/*/revisions/**",
+                                "/api/v1/environments/*/rollback")
                         .authenticated()
                         .anyRequest().denyAll())
                 .exceptionHandling(exceptions -> exceptions
