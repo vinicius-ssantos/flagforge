@@ -683,6 +683,9 @@ public class PublicationService {
                 resultSet.getObject("environment_id", UUID.class),
                 resultSet.getLong("revision_number"),
                 resultSet.getLong("pointer_version"),
+                RevisionKind.valueOf(resultSet.getString("revision_kind")),
+                resultSet.getObject("source_revision_id", UUID.class),
+                nullableLong(resultSet, "source_revision_number"),
                 resultSet.getInt("snapshot_schema_version"),
                 resultSet.getString("algorithm_version"),
                 resultSet.getString("checksum"),
@@ -690,6 +693,12 @@ public class PublicationService {
                 resultSet.getString("published_by"),
                 resultSet.getString("correlation_id"),
                 resultSet.getTimestamp("published_at").toInstant());
+    }
+
+    private static Long nullableLong(ResultSet resultSet, String column)
+            throws SQLException {
+        long value = resultSet.getLong(column);
+        return resultSet.wasNull() ? null : value;
     }
 
     private static PublishedValueType parseValueType(String valueType) {
@@ -755,6 +764,9 @@ public class PublicationService {
             UUID environmentId,
             long revisionNumber,
             long publicationVersion,
+            RevisionKind revisionKind,
+            UUID sourceRevisionId,
+            Long sourceRevisionNumber,
             int snapshotSchemaVersion,
             String algorithmVersion,
             String checksum,
@@ -764,9 +776,15 @@ public class PublicationService {
             Instant publishedAt) {
     }
 
+    public enum RevisionKind {
+        PUBLISH,
+        ROLLBACK
+    }
+
     public enum PublicationError {
         INVALID_CONFIGURATION,
         INVALID_EXPECTED_VERSION,
+        INVALID_ROLLBACK_SOURCE,
         VERSION_CONFLICT
     }
 
