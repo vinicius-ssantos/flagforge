@@ -1,8 +1,6 @@
 package io.github.viniciusssantos.flagforge.evaluation;
 
 import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
-import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -15,8 +13,6 @@ import io.github.viniciusssantos.flagforge.publishing.PublishedSnapshotCodec.Pub
 import io.github.viniciusssantos.flagforge.publishing.PublishedSnapshotCodec.PublishedValueType;
 import io.github.viniciusssantos.flagforge.publishing.PublishedSnapshotCodec.PublishedVariant;
 import io.github.viniciusssantos.flagforge.publishing.PublishedSnapshotCodec.SnapshotCodecException;
-import io.github.viniciusssantos.flagforge.targeting.TargetingEngine.FlagTarget;
-import io.github.viniciusssantos.flagforge.targeting.TargetingEngine.TargetingConfiguration;
 
 import org.springframework.dao.DataRetrievalFailureException;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
@@ -69,11 +65,6 @@ public class DatabaseEvaluationSnapshotProvider
 
         PublishedFlag flag = requestedFlag.get();
         Map<String, VariantValue> variants = mapVariants(flag);
-        List<FlagTarget> flagTargets = document.flags().stream()
-                .map(DatabaseEvaluationSnapshotProvider::mapFlagTarget)
-                .toList();
-        TargetingConfiguration targetingConfiguration =
-                new TargetingConfiguration(flagTargets, List.of());
         String configurationVersion = "revision-"
                 + document.revisionNumber()
                 + "-sha256-"
@@ -89,7 +80,7 @@ public class DatabaseEvaluationSnapshotProvider
                 mapValueType(flag.valueType()),
                 flag.defaultVariant(),
                 variants,
-                targetingConfiguration,
+                document.targetingConfiguration(),
                 null));
     }
 
@@ -151,19 +142,6 @@ public class DatabaseEvaluationSnapshotProvider
                     new VariantValue(mapValueType(variant.valueType()), value));
         }
         return Map.copyOf(variants);
-    }
-
-    private static FlagTarget mapFlagTarget(PublishedFlag flag) {
-        LinkedHashSet<String> variantKeys = new LinkedHashSet<>();
-        for (PublishedVariant variant : flag.variants()) {
-            variantKeys.add(variant.key());
-        }
-        return new FlagTarget(
-                flag.key(),
-                variantKeys,
-                flag.defaultVariant(),
-                List.of(),
-                List.of());
     }
 
     private static ValueType mapValueType(PublishedValueType valueType) {

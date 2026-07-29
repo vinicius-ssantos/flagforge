@@ -17,8 +17,8 @@ boundary that changes runtime behavior.
 
 ## Transaction boundary
 
-`PublicationService.publish(environmentId)` performs the following work inside
-one PostgreSQL transaction:
+`PublicationService.publish(environmentId, expectedVersion)` performs the
+following work inside one PostgreSQL transaction:
 
 1. Authorize environment write access and lock the tenant-owned environment.
 2. Allocate the next monotonically increasing environment revision.
@@ -52,8 +52,8 @@ tenant or environment.
 
 ## Canonical snapshot format
 
-Snapshot schema version 1 uses a deterministic binary encoding rather than
-runtime-dependent object serialization. The wire format includes:
+Snapshots use a deterministic binary encoding rather than runtime-dependent
+object serialization. The common wire format includes:
 
 - the `FFSNAP01` magic header;
 - schema version;
@@ -63,13 +63,20 @@ runtime-dependent object serialization. The wire format includes:
 - sorted feature flags;
 - sorted typed variants and their values.
 
+Schema version 1 remains readable and preserves its fixed compatibility vector.
+Schema version 2 appends the canonical targeting graph to the same payload,
+including prerequisites, ordered rules, typed conditions, and reusable
+segments. Runtime evaluation consumes this decoded graph directly rather than
+reconstructing it from mutable tables.
+
 The current schema supports BOOLEAN and STRING flag values. Keys and strings
 use explicit UTF-8 byte limits. Counts are bounded, trailing bytes are rejected,
 and the complete payload cannot exceed 1 MiB.
 
-Compatibility tests pin a fixed byte length and checksum for a known snapshot.
-Any accidental wire-format change therefore fails verification instead of
-silently producing incompatible runtime data.
+Compatibility tests pin the version 1 byte length and checksum and verify a
+deterministic version 2 graph round-trip. Accidental wire-format changes
+therefore fail verification instead of silently producing incompatible runtime
+data.
 
 ## Draft behavior
 
@@ -104,10 +111,11 @@ Until then, events remain safely persisted with status `PENDING`.
 
 ## Concurrency scope
 
-The environment row is locked while allocating and committing a revision, so
-concurrent publications cannot receive the same revision number or interleave
-pointer updates. Client-supplied expected-version conflict semantics and richer
-draft workflow concurrency belong to issue #15.
+The environment row is locked while allocating and committing a revision, and
+every publication supplies the last observed environment publication version.
+A compare-and-set pointer update requires that stored version to match. Two
+writers using the same expected version therefore produce one successful
+publication and one explicit conflict without a distributed Redis lock.
 
 ## Verification coverage
 
@@ -119,5 +127,7 @@ Automated tests verify:
 - revision history rejects mutation and deletion;
 - viewers cannot publish;
 - checksum tampering and unsupported schema rejection;
-- deterministic compatibility vectors and payload bounds;
-- evaluation API fixtures publish before runtime evaluation.
+- deterministic schema v1 compatibility and schema v2 graph round-trip;
+- PostgreSQL optimistic-concurrency conflicts and metadata;
+- evaluation API fixtures publish before runtime evaluation;
+- runtime evaluation uses the graph decoded from the immutable payload.

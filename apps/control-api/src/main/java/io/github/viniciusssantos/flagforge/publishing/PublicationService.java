@@ -13,12 +13,14 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 
+import io.github.viniciusssantos.flagforge.publishing.PublicationGraphValidator.PublicationGraphException;
 import io.github.viniciusssantos.flagforge.publishing.PublishedSnapshotCodec.EncodedSnapshot;
 import io.github.viniciusssantos.flagforge.publishing.PublishedSnapshotCodec.PublishedFlag;
 import io.github.viniciusssantos.flagforge.publishing.PublishedSnapshotCodec.PublishedSnapshot;
 import io.github.viniciusssantos.flagforge.publishing.PublishedSnapshotCodec.PublishedValueType;
 import io.github.viniciusssantos.flagforge.publishing.PublishedSnapshotCodec.PublishedVariant;
 import io.github.viniciusssantos.flagforge.publishing.PublishedSnapshotCodec.SnapshotCodecException;
+import io.github.viniciusssantos.flagforge.targeting.TargetingEngine.TargetingConfiguration;
 import io.github.viniciusssantos.flagforge.tenancy.ControlPlanePermission;
 import io.github.viniciusssantos.flagforge.tenancy.Environment;
 import io.github.viniciusssantos.flagforge.tenancy.TenantAccessException;
@@ -43,31 +45,60 @@ public class PublicationService {
     private final TenantAuthorizationService authorizationService;
     private final TenantHierarchyService tenantHierarchyService;
     private final PublishedSnapshotCodec snapshotCodec;
+    private final PublicationGraphValidator publicationGraphValidator;
 
     public PublicationService(
             NamedParameterJdbcTemplate jdbcTemplate,
             TenantAuthorizationService authorizationService,
             TenantHierarchyService tenantHierarchyService,
-            PublishedSnapshotCodec snapshotCodec) {
+            PublishedSnapshotCodec snapshotCodec,
+            PublicationGraphValidator publicationGraphValidator) {
         this.jdbcTemplate = jdbcTemplate;
         this.authorizationService = authorizationService;
         this.tenantHierarchyService = tenantHierarchyService;
         this.snapshotCodec = snapshotCodec;
+        this.publicationGraphValidator = publicationGraphValidator;
     }
 
     @Transactional
-    public PublishedRevision publish(UUID environmentId) {
+    public PublishedRevision publish(UUID environmentId, long expectedVersion) {
+        return publish(environmentId, expectedVersion, null);
+    }
+
+    @Transactional
+    public PublishedRevision publish(
+            UUID environmentId,
+            long expectedVersion,
+            TargetingConfiguration targetingConfiguration) {
         Objects.requireNonNull(environmentId, "environmentId is required");
+        if (expectedVersion < 0) {
+            throw new PublicationException(
+                    PublicationError.INVALID_EXPECTED_VERSION,
+                    "Expected publication version cannot be negative");
+        }
         TenantIdentity identity = authorizationService.require(
                 ControlPlanePermission.ENVIRONMENT_WRITE);
         Environment environment = tenantHierarchyService.findEnvironment(environmentId);
         ensureSameOrganization(identity, environment.organizationId());
         lockEnvironment(environment);
 
-        long revisionNumber = currentRevisionNumber(environment).orElse(0L) + 1;
+        PublicationState state = currentPublicationState(environment);
+        if (state.publicationVersion() != expectedVersion) {
+            throw PublicationException.versionConflict(expectedVersion, state);
+        }
+        long revisionNumber = state.currentRevisionNumber() + 1;
+        long publicationVersion = expectedVersion + 1;
         List<PublishedFlag> flags = compileCandidate(
                 environment.organizationId(),
                 environment.projectId());
+        TargetingConfiguration validatedConfiguration;
+        try {
+            validatedConfiguration = publicationGraphValidator.validate(
+                    flags,
+                    targetingConfiguration);
+        } catch (PublicationGraphException exception) {
+            throw PublicationException.invalidGraph(exception);
+        }
         PublishedSnapshot snapshot = new PublishedSnapshot(
                 PublishedSnapshotCodec.SCHEMA_VERSION,
                 environment.organizationId(),
@@ -75,7 +106,8 @@ public class PublicationService {
                 environment.id(),
                 revisionNumber,
                 PublishedSnapshotCodec.ALGORITHM_VERSION,
-                flags);
+                flags,
+                validatedConfiguration);
 
         EncodedSnapshot encoded;
         try {
@@ -121,6 +153,8 @@ public class PublicationService {
                 revisionId,
                 environment,
                 revisionNumber,
+                expectedVersion,
+                publicationVersion,
                 publishedAt);
 
         return new PublishedRevision(
@@ -129,6 +163,7 @@ public class PublicationService {
                 environment.projectId(),
                 environment.id(),
                 revisionNumber,
+                publicationVersion,
                 PublishedSnapshotCodec.SCHEMA_VERSION,
                 PublishedSnapshotCodec.ALGORITHM_VERSION,
                 encoded.checksum(),
@@ -152,6 +187,7 @@ public class PublicationService {
                        revision.project_id,
                        revision.environment_id,
                        revision.revision_number,
+                       publication.pointer_version,
                        revision.snapshot_schema_version,
                        revision.algorithm_version,
                        revision.checksum,
@@ -298,14 +334,24 @@ public class PublicationService {
         }
     }
 
-    private Optional<Long> currentRevisionNumber(Environment environment) {
+    private PublicationState currentPublicationState(Environment environment) {
         String sql = """
-                SELECT current_revision_number
-                FROM flagforge.environment_publication_state
-                WHERE organization_id = :organizationId
-                  AND project_id = :projectId
-                  AND environment_id = :environmentId
-                FOR UPDATE
+                SELECT publication.current_revision_id,
+                       publication.current_revision_number,
+                       publication.pointer_version,
+                       revision.checksum,
+                       publication.updated_at
+                FROM flagforge.environment_publication_state publication
+                JOIN flagforge.configuration_revisions revision
+                  ON revision.organization_id = publication.organization_id
+                 AND revision.project_id = publication.project_id
+                 AND revision.environment_id = publication.environment_id
+                 AND revision.id = publication.current_revision_id
+                 AND revision.revision_number = publication.current_revision_number
+                WHERE publication.organization_id = :organizationId
+                  AND publication.project_id = :projectId
+                  AND publication.environment_id = :environmentId
+                FOR UPDATE OF publication
                 """;
         return jdbcTemplate.query(
                         sql,
@@ -313,10 +359,15 @@ public class PublicationService {
                                 "organizationId", environment.organizationId(),
                                 "projectId", environment.projectId(),
                                 "environmentId", environment.id()),
-                        (resultSet, rowNumber) ->
-                            resultSet.getLong("current_revision_number"))
+                        (resultSet, rowNumber) -> new PublicationState(
+                                resultSet.getObject("current_revision_id", UUID.class),
+                                resultSet.getLong("current_revision_number"),
+                                resultSet.getLong("pointer_version"),
+                                resultSet.getString("checksum"),
+                                resultSet.getTimestamp("updated_at").toInstant()))
                 .stream()
-                .findFirst();
+                .findFirst()
+                .orElseGet(PublicationState::unpublished);
     }
 
     private void insertRevision(
@@ -505,6 +556,8 @@ public class PublicationService {
             UUID revisionId,
             Environment environment,
             long revisionNumber,
+            long expectedVersion,
+            long publicationVersion,
             Instant publishedAt) {
         String sql = """
                 INSERT INTO flagforge.environment_publication_state (
@@ -521,20 +574,28 @@ public class PublicationService {
                     :environmentId,
                     :id,
                     :revisionNumber,
-                    0,
+                    :publicationVersion,
                     :publishedAt
                 )
                 ON CONFLICT (organization_id, project_id, environment_id)
                 DO UPDATE SET
                     current_revision_id = EXCLUDED.current_revision_id,
                     current_revision_number = EXCLUDED.current_revision_number,
-                    pointer_version =
-                        flagforge.environment_publication_state.pointer_version + 1,
+                    pointer_version = EXCLUDED.pointer_version,
                     updated_at = EXCLUDED.updated_at
+                WHERE flagforge.environment_publication_state.pointer_version =
+                    :expectedVersion
                 """;
-        jdbcTemplate.update(
+        int updated = jdbcTemplate.update(
                 sql,
-                baseParameters(revisionId, environment, revisionNumber, publishedAt));
+                baseParameters(revisionId, environment, revisionNumber, publishedAt)
+                        .addValue("expectedVersion", expectedVersion)
+                        .addValue("publicationVersion", publicationVersion));
+        if (updated != 1) {
+            throw PublicationException.versionConflict(
+                    expectedVersion,
+                    currentPublicationState(environment));
+        }
     }
 
     private static MapSqlParameterSource baseParameters(
@@ -577,6 +638,7 @@ public class PublicationService {
                 resultSet.getObject("project_id", UUID.class),
                 resultSet.getObject("environment_id", UUID.class),
                 resultSet.getLong("revision_number"),
+                resultSet.getLong("pointer_version"),
                 resultSet.getInt("snapshot_schema_version"),
                 resultSet.getString("algorithm_version"),
                 resultSet.getString("checksum"),
@@ -630,12 +692,25 @@ public class PublicationService {
             List<PublishedVariant> variants) {
     }
 
+    private record PublicationState(
+            UUID currentRevisionId,
+            long currentRevisionNumber,
+            long publicationVersion,
+            String currentChecksum,
+            Instant updatedAt) {
+
+        private static PublicationState unpublished() {
+            return new PublicationState(null, 0, 0, null, null);
+        }
+    }
+
     public record PublishedRevision(
             UUID revisionId,
             UUID organizationId,
             UUID projectId,
             UUID environmentId,
             long revisionNumber,
+            long publicationVersion,
             int snapshotSchemaVersion,
             String algorithmVersion,
             String checksum,
@@ -646,28 +721,116 @@ public class PublicationService {
     }
 
     public enum PublicationError {
-        INVALID_CONFIGURATION
+        INVALID_CONFIGURATION,
+        INVALID_EXPECTED_VERSION,
+        VERSION_CONFLICT
     }
 
     public static final class PublicationException extends RuntimeException {
 
         private final PublicationError code;
+        private final Long expectedVersion;
+        private final Long currentVersion;
+        private final UUID currentRevisionId;
+        private final Long currentRevisionNumber;
+        private final String currentChecksum;
+        private final Instant currentUpdatedAt;
+        private final String validationCode;
 
         public PublicationException(PublicationError code, String message) {
-            super(message);
-            this.code = Objects.requireNonNull(code, "code is required");
+            this(code, message, null, null, null, null, null, null, null, null);
         }
 
         public PublicationException(
                 PublicationError code,
                 String message,
                 Throwable cause) {
+            this(code, message, cause, null, null, null, null, null, null, null);
+        }
+
+        private PublicationException(
+                PublicationError code,
+                String message,
+                Throwable cause,
+                Long expectedVersion,
+                Long currentVersion,
+                UUID currentRevisionId,
+                Long currentRevisionNumber,
+                String currentChecksum,
+                Instant currentUpdatedAt,
+                String validationCode) {
             super(message, cause);
             this.code = Objects.requireNonNull(code, "code is required");
+            this.expectedVersion = expectedVersion;
+            this.currentVersion = currentVersion;
+            this.currentRevisionId = currentRevisionId;
+            this.currentRevisionNumber = currentRevisionNumber;
+            this.currentChecksum = currentChecksum;
+            this.currentUpdatedAt = currentUpdatedAt;
+            this.validationCode = validationCode;
+        }
+
+        private static PublicationException invalidGraph(
+                PublicationGraphException exception) {
+            return new PublicationException(
+                    PublicationError.INVALID_CONFIGURATION,
+                    "Candidate targeting graph cannot be published",
+                    exception,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    exception.validationCode());
+        }
+
+        private static PublicationException versionConflict(
+                long expectedVersion,
+                PublicationState state) {
+            return new PublicationException(
+                    PublicationError.VERSION_CONFLICT,
+                    "Publication version conflict; reload the environment before publishing",
+                    null,
+                    expectedVersion,
+                    state.publicationVersion(),
+                    state.currentRevisionId(),
+                    state.currentRevisionNumber(),
+                    state.currentChecksum(),
+                    state.updatedAt(),
+                    null);
         }
 
         public PublicationError code() {
             return code;
+        }
+
+        public Long expectedVersion() {
+            return expectedVersion;
+        }
+
+        public Long currentVersion() {
+            return currentVersion;
+        }
+
+        public UUID currentRevisionId() {
+            return currentRevisionId;
+        }
+
+        public Long currentRevisionNumber() {
+            return currentRevisionNumber;
+        }
+
+        public String currentChecksum() {
+            return currentChecksum;
+        }
+
+        public Instant currentUpdatedAt() {
+            return currentUpdatedAt;
+        }
+
+        public String validationCode() {
+            return validationCode;
         }
     }
 }

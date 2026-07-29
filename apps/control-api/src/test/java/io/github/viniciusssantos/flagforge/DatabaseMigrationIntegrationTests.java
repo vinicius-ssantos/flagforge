@@ -29,7 +29,7 @@ class DatabaseMigrationIntegrationTests extends PostgreSqlIntegrationTestSupport
                 Boolean.class);
         Integer successfulMigrations = jdbcTemplate.queryForObject(
                 "select count(*) from flagforge.flyway_schema_history "
-                        + "where success and version in ('1', '2', '3', '4', '5')",
+                        + "where success and version in ('1', '2', '3', '4', '5', '6')",
                 Integer.class);
         Integer tenantTables = jdbcTemplate.queryForObject(
                 "select count(*) from information_schema.tables "
@@ -44,7 +44,7 @@ class DatabaseMigrationIntegrationTests extends PostgreSqlIntegrationTestSupport
                 Integer.class);
 
         assertThat(schemaExists).isTrue();
-        assertThat(successfulMigrations).isEqualTo(5);
+        assertThat(successfulMigrations).isEqualTo(6);
         assertThat(tenantTables).isEqualTo(12);
     }
 
