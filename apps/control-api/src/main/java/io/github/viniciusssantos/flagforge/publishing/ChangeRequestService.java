@@ -683,6 +683,11 @@ public class ChangeRequestService {
         return rs.wasNull() ? null : value;
     }
 
+    private record Baseline(
+            long revisionNumber,
+            PublishedSnapshot snapshot) {
+    }
+
     private record Candidate(long revisionNumber, String checksum, byte[] payload) {
         private Candidate {
             payload = payload.clone();
@@ -690,6 +695,34 @@ public class ChangeRequestService {
         @Override
         public byte[] payload() {
             return payload.clone();
+        }
+    }
+
+    public enum DifferenceType {
+        ADDED,
+        REMOVED,
+        CHANGED
+    }
+
+    public record CandidateDifference(
+            String path,
+            DifferenceType type,
+            String beforeValue,
+            String afterValue) {
+    }
+
+    public record CandidateDiff(
+            UUID changeRequestId,
+            Long fromRevision,
+            long candidateRevision,
+            String candidateChecksum,
+            boolean candidateValid,
+            List<CandidateDifference> differences) {
+
+        public CandidateDiff {
+            differences = List.copyOf(Objects.requireNonNull(
+                    differences,
+                    "differences are required"));
         }
     }
 
