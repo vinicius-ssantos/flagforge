@@ -16,7 +16,13 @@ flowchart TD
 
 ### Organization
 
-The tenant boundary. Owns projects, members, roles, quotas, and audit history.
+The tenant boundary. Owns projects, members, roles, quotas, and audit history. Organization slugs are stable, globally unique public boundaries; tenant-owned child keys are unique only inside their documented organization or project scope.
+
+### Membership
+
+Links one authenticated actor identifier to one organization. The initial hierarchy stores only ACTIVE or SUSPENDED membership state. OWNER, ADMIN, DEVELOPER, and VIEWER permissions are intentionally deferred to the dedicated RBAC slice.
+
+An organization is bootstrapped together with its founding membership in one PostgreSQL transaction. Normal tenant operations accept no caller-supplied organization identifier; the organization is derived from the authenticated principal and checked against an active membership.
 
 ### Project
 
@@ -24,7 +30,9 @@ A software product or bounded application context. Flag keys are unique inside a
 
 ### Environment
 
-An isolated configuration space such as development, staging, or production. Credentials and publication protection are environment-scoped.
+An isolated configuration space such as development, staging, production, `qa-blue`, or any other valid project-local key. The familiar development, staging, and production names are examples only and are never automatically seeded or hard-coded. Credentials and publication protection are environment-scoped.
+
+The database stores the organization identifier on every environment and enforces a composite foreign key to `(organization_id, project_id)`, preventing an environment from referencing another tenant's project.
 
 ### Feature Flag
 
@@ -123,6 +131,8 @@ Initial reason taxonomy:
 
 - Every tenant-owned aggregate belongs to exactly one organization.
 - Resource lookup includes the authenticated organization boundary.
+- Missing resources and resources owned by another organization produce the same generic not-found contract.
+- A principal claiming an organization without an ACTIVE membership is rejected before resource access.
 - Environment credentials cannot administer Control Plane resources.
 - Revoked credentials stop authorizing new requests.
 

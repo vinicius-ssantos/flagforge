@@ -12,6 +12,7 @@ spring:
     password: ${FLAGFORGE_DB_PASSWORD:flagforge-local-only}
     hikari:
       connection-timeout: 5000
+      schema: ${FLAGFORGE_DB_SCHEMA:flagforge}
   flyway:
     enabled: true
     locations: classpath:db/migration
