@@ -9,6 +9,8 @@ public enum ControlPlanePermission {
     PROJECT_WRITE,
     ENVIRONMENT_READ,
     ENVIRONMENT_WRITE,
+    FLAG_READ,
+    FLAG_WRITE,
     SDK_CREDENTIAL_READ,
     SDK_CREDENTIAL_MANAGE
 }
