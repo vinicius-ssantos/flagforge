@@ -17,7 +17,8 @@ public enum MembershipRole {
             ControlPlanePermission.FLAG_WRITE,
             ControlPlanePermission.SDK_CREDENTIAL_READ,
             ControlPlanePermission.SDK_CREDENTIAL_MANAGE,
-            ControlPlanePermission.AUDIT_READ)),
+            ControlPlanePermission.AUDIT_READ,
+            ControlPlanePermission.CHANGE_REQUEST_REVIEW)),
     DEVELOPER(EnumSet.of(
             ControlPlanePermission.ORGANIZATION_READ,
             ControlPlanePermission.MEMBERSHIP_READ,
