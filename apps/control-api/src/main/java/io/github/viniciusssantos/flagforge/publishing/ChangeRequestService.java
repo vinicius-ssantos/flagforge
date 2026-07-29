@@ -283,6 +283,60 @@ public class ChangeRequestService {
         return find(tenantHierarchyService.findEnvironment(environmentId), changeRequestId);
     }
 
+    @Transactional(readOnly = true)
+    public CandidateDiff diff(UUID environmentId, UUID changeRequestId) {
+        authorizationService.require(ControlPlanePermission.ENVIRONMENT_READ);
+        Environment environment = tenantHierarchyService.findEnvironment(environmentId);
+        ChangeRequest request = find(environment, changeRequestId);
+        byte[] candidatePayload = jdbcTemplate.queryForObject(
+                """
+                SELECT candidate_payload
+                FROM flagforge.change_requests
+                WHERE organization_id = :organizationId
+                  AND project_id = :projectId
+                  AND environment_id = :environmentId
+                  AND id = :id
+                """,
+                parameters(environment).addValue("id", changeRequestId),
+                byte[].class);
+        Baseline baseline = loadBaseline(environment);
+        Map<String, String> before = baseline == null
+                ? Map.of()
+                : flatten(baseline.snapshot());
+        Map<String, String> after = parsePayload(candidatePayload);
+        TreeSet<String> paths = new TreeSet<>();
+        paths.addAll(before.keySet());
+        paths.addAll(after.keySet());
+        List<CandidateDifference> differences = new ArrayList<>();
+        for (String path : paths) {
+            String beforeValue = before.get(path);
+            String afterValue = after.get(path);
+            if (!Objects.equals(beforeValue, afterValue)) {
+                differences.add(new CandidateDifference(
+                        path,
+                        beforeValue == null ? DifferenceType.ADDED
+                                : afterValue == null ? DifferenceType.REMOVED
+                                : DifferenceType.CHANGED,
+                        beforeValue,
+                        afterValue));
+            }
+        }
+        boolean valid;
+        try {
+            verifyCandidate(environment, request);
+            valid = true;
+        } catch (ChangeRequestException exception) {
+            valid = false;
+        }
+        return new CandidateDiff(
+                request.id(),
+                baseline == null ? null : baseline.revisionNumber(),
+                request.candidateRevisionNumber(),
+                request.candidateChecksum(),
+                valid,
+                differences);
+    }
+
     public void requireDirectPublicationAllowed(UUID environmentId) {
         requireDirectPublicationAllowed(
                 tenantHierarchyService.findEnvironment(environmentId));
@@ -310,7 +364,7 @@ public class ChangeRequestService {
     }
 
     private Candidate compileCandidate(Environment environment, long expectedVersion) {
-        String canonical = jdbcTemplate.query(
+        Map<String, String> values = jdbcTemplate.query(
                 """
                 SELECT flag.flag_key, flag.value_type, flag.default_variant_key,
                        variant.variant_key, variant.boolean_value, variant.string_value
@@ -326,22 +380,131 @@ public class ChangeRequestService {
                 """,
                 parameters(environment),
                 rs -> {
-                    StringBuilder value = new StringBuilder();
+                    Map<String, String> result = new TreeMap<>();
                     while (rs.next()) {
-                        value.append(rs.getString("flag_key")).append('\u0000')
-                                .append(rs.getString("value_type")).append('\u0000')
-                                .append(rs.getString("default_variant_key")).append('\u0000')
-                                .append(rs.getString("variant_key")).append('\u0000')
-                                .append(rs.getObject("boolean_value")).append('\u0000')
-                                .append(rs.getString("string_value")).append('\n');
+                        String flag = "flags." + rs.getString("flag_key");
+                        String type = rs.getString("value_type");
+                        result.put(flag + ".type", type);
+                        result.put(flag + ".enabled", "true");
+                        result.put(flag + ".defaultVariant",
+                                rs.getString("default_variant_key"));
+                        Object booleanValue = rs.getObject("boolean_value");
+                        String value = booleanValue == null
+                                ? rs.getString("string_value")
+                                : booleanValue.toString();
+                        result.put(
+                                flag + ".variants." + rs.getString("variant_key"),
+                                type + ":" + value);
                     }
-                    return value.toString();
+                    return result;
                 });
-        byte[] payload = canonical.getBytes(StandardCharsets.UTF_8);
+        byte[] payload = serialize(values);
         return new Candidate(
                 expectedVersion + 1,
                 sha256(payload),
-                payload.length == 0 ? new byte[] {'\n'} : payload);
+                payload);
+    }
+
+    private Baseline loadBaseline(Environment environment) {
+        return jdbcTemplate.query(
+                        """
+                        SELECT revision.revision_number, snapshot.payload, snapshot.checksum
+                        FROM flagforge.environment_publication_state state
+                        JOIN flagforge.configuration_revisions revision
+                          ON revision.organization_id = state.organization_id
+                         AND revision.project_id = state.project_id
+                         AND revision.environment_id = state.environment_id
+                         AND revision.id = state.current_revision_id
+                        JOIN flagforge.configuration_snapshots snapshot
+                          ON snapshot.organization_id = revision.organization_id
+                         AND snapshot.project_id = revision.project_id
+                         AND snapshot.environment_id = revision.environment_id
+                         AND snapshot.revision_id = revision.id
+                        WHERE state.organization_id = :organizationId
+                          AND state.project_id = :projectId
+                          AND state.environment_id = :environmentId
+                        """,
+                        parameters(environment),
+                        (rs, rowNumber) -> new Baseline(
+                                rs.getLong("revision_number"),
+                                snapshotCodec.decode(
+                                        rs.getBytes("payload"),
+                                        rs.getString("checksum"))))
+                .stream()
+                .findFirst()
+                .orElse(null);
+    }
+
+    private static Map<String, String> flatten(PublishedSnapshot snapshot) {
+        Map<String, String> values = new TreeMap<>();
+        for (PublishedFlag flag : snapshot.flags()) {
+            String path = "flags." + flag.key();
+            values.put(path + ".type", flag.valueType().name());
+            values.put(path + ".enabled", Boolean.toString(flag.enabled()));
+            values.put(path + ".defaultVariant", flag.defaultVariant());
+            for (PublishedVariant variant : flag.variants()) {
+                String value = variant.booleanValue() == null
+                        ? variant.stringValue()
+                        : variant.booleanValue().toString();
+                values.put(
+                        path + ".variants." + variant.key(),
+                        variant.valueType().name() + ":" + value);
+            }
+        }
+        return values;
+    }
+
+    private static byte[] serialize(Map<String, String> values) {
+        StringBuilder canonical = new StringBuilder();
+        values.forEach((path, value) -> canonical
+                .append(path)
+                .append('=')
+                .append(escape(value))
+                .append('\n'));
+        if (canonical.isEmpty()) {
+            canonical.append('\n');
+        }
+        return canonical.toString().getBytes(StandardCharsets.UTF_8);
+    }
+
+    private static Map<String, String> parsePayload(byte[] payload) {
+        Map<String, String> values = new TreeMap<>();
+        String content = new String(payload, StandardCharsets.UTF_8);
+        for (String line : content.split("\\n")) {
+            int separator = line.indexOf('=');
+            if (separator > 0) {
+                values.put(
+                        line.substring(0, separator),
+                        unescape(line.substring(separator + 1)));
+            }
+        }
+        return values;
+    }
+
+    private static String escape(String value) {
+        return value.replace("\\", "\\\\")
+                .replace("\n", "\\n")
+                .replace("=", "\\=");
+    }
+
+    private static String unescape(String value) {
+        StringBuilder result = new StringBuilder();
+        boolean escaped = false;
+        for (int index = 0; index < value.length(); index++) {
+            char current = value.charAt(index);
+            if (escaped) {
+                result.append(current == 'n' ? '\n' : current);
+                escaped = false;
+            } else if (current == '\\') {
+                escaped = true;
+            } else {
+                result.append(current);
+            }
+        }
+        if (escaped) {
+            result.append('\\');
+        }
+        return result.toString();
     }
 
     private void requireExpectedVersion(Environment environment, long expectedVersion) {
