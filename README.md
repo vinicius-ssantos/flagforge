@@ -104,7 +104,7 @@ flowchart LR
 
 The first executable version can run both planes in one Spring Boot application. Module boundaries and contracts make independent deployment possible later if traffic, availability, or release cadence justifies it.
 
-See [Architecture](docs/ARCHITECTURE.md), [Domain Model](docs/DOMAIN_MODEL.md), and the [ADR index](docs/adr/README.md) for the complete reasoning.
+See [Architecture](docs/ARCHITECTURE.md), [Domain Model](docs/DOMAIN_MODEL.md), the [initial threat model](docs/THREAT_MODEL.md), and the [ADR index](docs/adr/README.md) for the complete reasoning.
 
 ## Core invariants
 
@@ -194,7 +194,7 @@ See [TEST_STRATEGY.md](docs/TEST_STRATEGY.md) for the planned verification matri
 
 ## Current status
 
-The repository is in **M0 / Foundation**. It contains the product specification, executable module-boundary verification, the Control API application, and a PostgreSQL/Flyway persistence baseline. Expanded quality gates and the security and observability baseline remain tracked as separate M0 issues.
+The repository is in **M0 / Foundation**. It contains the product specification, executable module-boundary verification, the Control API application, the PostgreSQL/Flyway persistence baseline, the CI quality gate, and initial security and observability defaults. The next delivery slice begins the tenant hierarchy and isolation model.
 
 ## Quick start
 
@@ -243,12 +243,20 @@ Windows:
 .\mvnw.cmd --projects apps/control-api spring-boot:run
 ```
 
-The initial operational endpoints are:
+The initial public operational endpoints are:
 
 ```text
 GET http://localhost:8080/actuator/health
+GET http://localhost:8080/actuator/health/liveness
+GET http://localhost:8080/actuator/health/readiness
 GET http://localhost:8080/actuator/info
+GET http://localhost:8080/livez
+GET http://localhost:8080/readyz
 ```
+
+All application routes are default-denied until the authentication and RBAC slice is delivered. Health responses never expose component details. Readiness includes PostgreSQL; liveness does not.
+
+Structured ECS logs include a validated or generated `X-Correlation-ID`. OpenTelemetry integration is available, while OTLP trace export is disabled by default. It can be enabled explicitly with `FLAGFORGE_OTEL_EXPORT_ENABLED=true` and configured through `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`. Sampling is controlled by `FLAGFORGE_TRACING_SAMPLING_PROBABILITY`.
 
 Stop the local database while preserving its volume:
 

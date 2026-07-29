@@ -16,7 +16,20 @@ flowchart TD
 
 ### Organization
 
-The tenant boundary. Owns projects, members, roles, quotas, and audit history.
+The tenant boundary. Owns projects, members, roles, quotas, and audit history. Organization slugs are stable, globally unique public boundaries; tenant-owned child keys are unique only inside their documented organization or project scope.
+
+### Membership
+
+Links one authenticated actor identifier to one organization. Memberships have ACTIVE or SUSPENDED state and one explicit role:
+
+- OWNER has every Control Plane permission, including organization ownership changes. Every organization must retain at least one ACTIVE OWNER.
+- ADMIN manages memberships, projects, environments, and SDK credentials, but cannot grant or alter OWNER authority.
+- DEVELOPER reads organization and membership metadata and can write projects and environments.
+- VIEWER has read-only access to organization, membership, project, environment, and credential metadata.
+
+Authorization is checked before resource lookup. This prevents permission failures from becoming a resource-enumeration channel.
+
+An organization is bootstrapped together with an OWNER founding membership in one PostgreSQL transaction. Normal tenant operations accept no caller-supplied organization identifier; the organization is derived from the authenticated principal and checked against an active membership.
 
 ### Project
 
@@ -24,22 +37,30 @@ A software product or bounded application context. Flag keys are unique inside a
 
 ### Environment
 
-An isolated configuration space such as development, staging, or production. Credentials and publication protection are environment-scoped.
+An isolated configuration space such as development, staging, production, `qa-blue`, or any other valid project-local key. The familiar development, staging, and production names are examples only and are never automatically seeded or hard-coded. Credentials and publication protection are environment-scoped.
+
+The database stores the organization identifier on every environment and enforces a composite foreign key to `(organization_id, project_id)`, preventing an environment from referencing another tenant's project.
+
+### SDK Credential
+
+An environment-scoped machine credential that authorizes evaluation only. Its plaintext format contains a public lookup identifier and a cryptographically random 256-bit secret. Plaintext is returned only when the credential is created or rotated; PostgreSQL stores only the SHA-256 hash of the random secret plus non-sensitive metadata.
+
+Credentials can be listed by metadata, rotated, and revoked. Rotation creates a new credential linked to its predecessor and revokes the predecessor in one transaction. Authentication validates organization, environment, EVALUATE scope, ACTIVE status, and the secret using a constant-time comparison. Invalid, revoked, unknown, cross-environment, and cross-tenant credentials share the same generic failure contract.
 
 ### Feature Flag
 
 A stable key and metadata describing a runtime decision. A flag has a value type, lifecycle state, ownership, variants, rules, default behavior, and optional prerequisites.
 
-Initial types:
+The first executable types are:
 
-- Boolean.
-- String.
-- Integer/decimal.
-- JSON object with a bounded payload size.
+- BOOLEAN, with named boolean variants such as `disabled=false` and `enabled=true`.
+- STRING, with named variants such as `control=classic` and `compact=compact-v2`.
+
+NUMBER and JSON remain reserved in the schema and enum so their storage contracts are explicit, but creation is rejected with a stable `UNSUPPORTED_VALUE_TYPE` code until numeric normalization and bounded JSON validation are fully implemented. Values are never silently coerced between types.
 
 ### Variant
 
-A named typed value, such as `control`, `checkout-a`, or `checkout-b`. Named variants make evaluation and exposure metrics understandable.
+A named typed value, such as `disabled`, `enabled`, `control`, `checkout-a`, or `checkout-b`. Every variant has exactly the same immutable value type as its flag. Variant keys are unique per flag, and the declared default must reference an existing variant. Named variants make evaluation and exposure metrics understandable.
 
 ### Segment
 
@@ -71,6 +92,13 @@ stateDiagram-v2
 ```
 
 Approval is optional in non-protected environments and policy-controlled in production.
+
+Stable flag identity has a smaller lifecycle before published revisions exist:
+
+- ACTIVE flags can be resolved for evaluation and editing.
+- ARCHIVED flags remain readable for history but cannot be resolved as active.
+- A project cannot reuse an archived key, especially with an incompatible type.
+- RELEASE and EXPERIMENT flags require an expected removal date; OPERATIONAL and KILL_SWITCH flags may be permanent.
 
 ## Evaluation algorithm
 
@@ -123,8 +151,13 @@ Initial reason taxonomy:
 
 - Every tenant-owned aggregate belongs to exactly one organization.
 - Resource lookup includes the authenticated organization boundary.
+- Missing resources and resources owned by another organization produce the same generic not-found contract.
+- A principal claiming an organization without an ACTIVE membership is rejected before resource access.
 - Environment credentials cannot administer Control Plane resources.
+- SDK credential plaintext is never persisted and is returned only at creation or rotation.
+- SDK credentials authorize only their own organization and environment.
 - Revoked credentials stop authorizing new requests.
+- Missing, invalid, revoked, and wrongly scoped credentials fail with the same generic authentication contract.
 
 ### Publication
 
@@ -138,6 +171,8 @@ Initial reason taxonomy:
 
 - A response comes from one complete snapshot version.
 - Type mismatch never silently coerces a value.
+- Stable flag keys are unique inside a project and cannot change value type.
+- Archived flags preserve metadata and variants while leaving the active lookup path.
 - Evaluation terminates even when malformed dependency input is encountered.
 - Equal normalized inputs and configuration produce equal outputs.
 
