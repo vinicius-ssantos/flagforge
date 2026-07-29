@@ -273,6 +273,11 @@ public class ChangeRequestService {
         return find(tenantHierarchyService.findEnvironment(environmentId), changeRequestId);
     }
 
+    public void requireDirectPublicationAllowed(UUID environmentId) {
+        requireDirectPublicationAllowed(
+                tenantHierarchyService.findEnvironment(environmentId));
+    }
+
     public void requireDirectPublicationAllowed(Environment environment) {
         if (policyService.approvalRequired(environment)) {
             throw new ChangeRequestException(
@@ -410,10 +415,6 @@ public class ChangeRequestService {
                 environment.organizationId(), environment.projectId(), environment.id(),
                 actorId, action, AuditResourceType.CHANGE_REQUEST, requestId,
                 null, null, details, now));
-    }
-
-    private static ChangeRequest map(ResultSet rs, int ignored) throws SQLException {
-        return map(rs);
     }
 
     private static ChangeRequest map(ResultSet rs) throws SQLException {
