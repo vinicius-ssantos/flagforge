@@ -3,6 +3,7 @@ package io.github.viniciusssantos.flagforge.publishing;
 import java.util.List;
 import java.util.UUID;
 
+import io.github.viniciusssantos.flagforge.publishing.ChangeRequestService.CandidateDiff;
 import io.github.viniciusssantos.flagforge.publishing.ChangeRequestService.ChangeRequest;
 import io.github.viniciusssantos.flagforge.publishing.EnvironmentApprovalPolicyService.ApprovalPolicy;
 
@@ -65,6 +66,13 @@ final class ChangeRequestController {
             @PathVariable UUID environmentId,
             @PathVariable UUID changeRequestId) {
         return changeRequestService.get(environmentId, changeRequestId);
+    }
+
+    @GetMapping("/change-requests/{changeRequestId}/diff")
+    CandidateDiff diff(
+            @PathVariable UUID environmentId,
+            @PathVariable UUID changeRequestId) {
+        return changeRequestService.diff(environmentId, changeRequestId);
     }
 
     @PostMapping("/change-requests/{changeRequestId}/submit")
