@@ -1,5 +1,6 @@
 package io.github.viniciusssantos.flagforge.publishing;
 
+import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.Map;
 import java.util.UUID;
@@ -88,7 +89,7 @@ public class EnvironmentApprovalPolicyService {
                         .addValue("approvalRequired", approvalRequired)
                         .addValue("preventSelfApproval", preventSelfApproval)
                         .addValue("updatedBy", identity.actorId())
-                        .addValue("updatedAt", now));
+                        .addValue("updatedAt", Timestamp.from(now)));
         auditTrailService.append(new AuditCommand(
                 environment.organizationId(),
                 environment.projectId(),
