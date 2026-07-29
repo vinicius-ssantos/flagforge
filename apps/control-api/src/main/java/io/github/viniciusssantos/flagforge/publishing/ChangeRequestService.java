@@ -8,8 +8,11 @@ import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.HexFormat;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.TreeMap;
+import java.util.TreeSet;
 import java.util.Objects;
 import java.util.UUID;
 
@@ -18,6 +21,9 @@ import io.github.viniciusssantos.flagforge.audit.AuditTrailService.AuditAction;
 import io.github.viniciusssantos.flagforge.audit.AuditTrailService.AuditCommand;
 import io.github.viniciusssantos.flagforge.audit.AuditTrailService.AuditResourceType;
 import io.github.viniciusssantos.flagforge.publishing.PublicationService.PublishedRevision;
+import io.github.viniciusssantos.flagforge.publishing.PublishedSnapshotCodec.PublishedFlag;
+import io.github.viniciusssantos.flagforge.publishing.PublishedSnapshotCodec.PublishedSnapshot;
+import io.github.viniciusssantos.flagforge.publishing.PublishedSnapshotCodec.PublishedVariant;
 import io.github.viniciusssantos.flagforge.tenancy.ControlPlanePermission;
 import io.github.viniciusssantos.flagforge.tenancy.Environment;
 import io.github.viniciusssantos.flagforge.tenancy.TenantAccessException;
@@ -42,6 +48,7 @@ public class ChangeRequestService {
     private final TenantHierarchyService tenantHierarchyService;
     private final EnvironmentApprovalPolicyService policyService;
     private final PublicationService publicationService;
+    private final PublishedSnapshotCodec snapshotCodec;
     private final AuditTrailService auditTrailService;
 
     public ChangeRequestService(
@@ -50,12 +57,14 @@ public class ChangeRequestService {
             TenantHierarchyService tenantHierarchyService,
             EnvironmentApprovalPolicyService policyService,
             PublicationService publicationService,
+            PublishedSnapshotCodec snapshotCodec,
             AuditTrailService auditTrailService) {
         this.jdbcTemplate = jdbcTemplate;
         this.authorizationService = authorizationService;
         this.tenantHierarchyService = tenantHierarchyService;
         this.policyService = policyService;
         this.publicationService = publicationService;
+        this.snapshotCodec = snapshotCodec;
         this.auditTrailService = auditTrailService;
     }
 
