@@ -41,7 +41,10 @@ class SecurityConfiguration {
                                 "/api/v1/environments/*/audit",
                                 "/api/v1/environments/*/revisions",
                                 "/api/v1/environments/*/revisions/**",
-                                "/api/v1/environments/*/rollback")
+                                "/api/v1/environments/*/rollback",
+                                "/api/v1/environments/*/approval-policy",
+                                "/api/v1/environments/*/change-requests",
+                                "/api/v1/environments/*/change-requests/**")
                         .authenticated()
                         .anyRequest().denyAll())
                 .exceptionHandling(exceptions -> exceptions

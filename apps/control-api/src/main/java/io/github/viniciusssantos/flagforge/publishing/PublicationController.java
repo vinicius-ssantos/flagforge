@@ -19,9 +19,13 @@ import org.springframework.web.bind.annotation.RestController;
 final class PublicationController {
 
     private final PublicationService publicationService;
+    private final ChangeRequestService changeRequestService;
 
-    PublicationController(PublicationService publicationService) {
+    PublicationController(
+            PublicationService publicationService,
+            ChangeRequestService changeRequestService) {
         this.publicationService = publicationService;
+        this.changeRequestService = changeRequestService;
     }
 
     @PostMapping
@@ -33,6 +37,7 @@ final class PublicationController {
                     PublicationError.INVALID_EXPECTED_VERSION,
                     "Expected publication version is required");
         }
+        changeRequestService.requireDirectPublicationAllowed(environmentId);
         return ResponseEntity.ok(publicationService.publish(
                 environmentId,
                 request.expectedVersion()));
