@@ -4,6 +4,7 @@ public final class TenantAccessException extends RuntimeException {
 
     public enum Reason {
         AUTHENTICATION_REQUIRED,
+        ACCESS_DENIED,
         RESOURCE_NOT_FOUND
     }
 
@@ -18,6 +19,12 @@ public final class TenantAccessException extends RuntimeException {
         return new TenantAccessException(
                 Reason.AUTHENTICATION_REQUIRED,
                 "Authenticated tenant context is required");
+    }
+
+    public static TenantAccessException accessDenied() {
+        return new TenantAccessException(
+                Reason.ACCESS_DENIED,
+                "Access denied");
     }
 
     public static TenantAccessException resourceNotFound() {
