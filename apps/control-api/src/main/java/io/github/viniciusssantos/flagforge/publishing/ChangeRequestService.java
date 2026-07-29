@@ -5,6 +5,7 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.HexFormat;
 import java.util.List;
@@ -100,7 +101,7 @@ public class ChangeRequestService {
                             .addValue("checksum", candidate.checksum())
                             .addValue("payload", candidate.payload())
                             .addValue("payloadSize", candidate.payload().length)
-                            .addValue("createdAt", now));
+                            .addValue("createdAt", Timestamp.from(now)));
         } catch (DuplicateKeyException exception) {
             throw new ChangeRequestException(
                     ChangeRequestError.ACTIVE_REQUEST_EXISTS,
@@ -169,7 +170,7 @@ public class ChangeRequestService {
                         .addValue("version", request.version())
                         .addValue("reviewerId", identity.actorId())
                         .addValue("decisionNote", optionalText(decisionNote, MAX_NOTE_LENGTH))
-                        .addValue("now", now));
+                        .addValue("now", Timestamp.from(now)));
         requireUpdated(updated);
         append(environment, identity.actorId(), request.id(),
                 AuditAction.CHANGE_REQUEST_APPROVED,
@@ -205,7 +206,7 @@ public class ChangeRequestService {
                         .addValue("reviewerId", identity.actorId())
                         .addValue("decisionNote", requireText(
                                 decisionNote, "decisionNote", MAX_NOTE_LENGTH))
-                        .addValue("now", now));
+                        .addValue("now", Timestamp.from(now)));
         requireUpdated(updated);
         append(environment, identity.actorId(), request.id(),
                 AuditAction.CHANGE_REQUEST_REJECTED, Map.of(), now);
@@ -246,7 +247,7 @@ public class ChangeRequestService {
                         .addValue("version", request.version())
                         .addValue("revisionId", revision.revisionId())
                         .addValue("revisionNumber", revision.revisionNumber())
-                        .addValue("now", now));
+                        .addValue("now", Timestamp.from(now)));
         requireUpdated(updated);
         append(environment, identity.actorId(), request.id(),
                 AuditAction.CHANGE_REQUEST_PUBLISHED,
@@ -400,7 +401,7 @@ public class ChangeRequestService {
                 parameters(environment)
                         .addValue("id", request.id())
                         .addValue("version", request.version())
-                        .addValue("now", now));
+                        .addValue("now", Timestamp.from(now)));
         requireUpdated(updated);
     }
 
