@@ -13,6 +13,10 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 
+import io.github.viniciusssantos.flagforge.audit.AuditTrailService;
+import io.github.viniciusssantos.flagforge.audit.AuditTrailService.AuditAction;
+import io.github.viniciusssantos.flagforge.audit.AuditTrailService.AuditCommand;
+import io.github.viniciusssantos.flagforge.audit.AuditTrailService.AuditResourceType;
 import io.github.viniciusssantos.flagforge.publishing.PublicationGraphValidator.PublicationGraphException;
 import io.github.viniciusssantos.flagforge.publishing.PublishedSnapshotCodec.EncodedSnapshot;
 import io.github.viniciusssantos.flagforge.publishing.PublishedSnapshotCodec.PublishedFlag;
@@ -40,24 +44,29 @@ public class PublicationService {
 
     private static final String CORRELATION_ID_MDC_KEY = "correlationId";
     private static final String PUBLISHED_EVENT = "CONFIGURATION_PUBLISHED";
+    private static final String ROLLED_BACK_EVENT =
+            "CONFIGURATION_ROLLED_BACK";
 
     private final NamedParameterJdbcTemplate jdbcTemplate;
     private final TenantAuthorizationService authorizationService;
     private final TenantHierarchyService tenantHierarchyService;
     private final PublishedSnapshotCodec snapshotCodec;
     private final PublicationGraphValidator publicationGraphValidator;
+    private final AuditTrailService auditTrailService;
 
     public PublicationService(
             NamedParameterJdbcTemplate jdbcTemplate,
             TenantAuthorizationService authorizationService,
             TenantHierarchyService tenantHierarchyService,
             PublishedSnapshotCodec snapshotCodec,
-            PublicationGraphValidator publicationGraphValidator) {
+            PublicationGraphValidator publicationGraphValidator,
+            AuditTrailService auditTrailService) {
         this.jdbcTemplate = jdbcTemplate;
         this.authorizationService = authorizationService;
         this.tenantHierarchyService = tenantHierarchyService;
         this.snapshotCodec = snapshotCodec;
         this.publicationGraphValidator = publicationGraphValidator;
+        this.auditTrailService = auditTrailService;
     }
 
     @Transactional
@@ -126,6 +135,9 @@ public class PublicationService {
                 revisionId,
                 environment,
                 revisionNumber,
+                RevisionKind.PUBLISH,
+                null,
+                null,
                 encoded,
                 identity.actorId(),
                 correlationId,
@@ -140,9 +152,24 @@ public class PublicationService {
                 revisionId,
                 environment,
                 revisionNumber,
+                PUBLISHED_EVENT,
                 identity.actorId(),
                 correlationId,
                 publishedAt);
+        auditTrailService.append(new AuditCommand(
+                environment.organizationId(),
+                environment.projectId(),
+                environment.id(),
+                identity.actorId(),
+                AuditAction.CONFIGURATION_PUBLISHED,
+                AuditResourceType.CONFIGURATION_REVISION,
+                revisionId,
+                revisionId,
+                revisionNumber,
+                Map.of(
+                        "checksum", encoded.checksum(),
+                        "revisionKind", RevisionKind.PUBLISH.name()),
+                publishedAt));
         insertOutboxEvent(
                 revisionId,
                 environment,
@@ -164,6 +191,144 @@ public class PublicationService {
                 environment.id(),
                 revisionNumber,
                 publicationVersion,
+                RevisionKind.PUBLISH,
+                null,
+                null,
+                PublishedSnapshotCodec.SCHEMA_VERSION,
+                PublishedSnapshotCodec.ALGORITHM_VERSION,
+                encoded.checksum(),
+                encoded.payload().length,
+                identity.actorId(),
+                correlationId,
+                publishedAt);
+    }
+
+    @Transactional
+    public PublishedRevision rollback(
+            UUID environmentId,
+            long sourceRevisionNumber,
+            long expectedVersion) {
+        Objects.requireNonNull(environmentId, "environmentId is required");
+        if (sourceRevisionNumber <= 0) {
+            throw new PublicationException(
+                    PublicationError.INVALID_ROLLBACK_SOURCE,
+                    "Rollback source revision must be positive");
+        }
+        if (expectedVersion < 0) {
+            throw new PublicationException(
+                    PublicationError.INVALID_EXPECTED_VERSION,
+                    "Expected publication version cannot be negative");
+        }
+        TenantIdentity identity = authorizationService.require(
+                ControlPlanePermission.ENVIRONMENT_WRITE);
+        Environment environment = tenantHierarchyService.findEnvironment(environmentId);
+        ensureSameOrganization(identity, environment.organizationId());
+        lockEnvironment(environment);
+
+        PublicationState state = currentPublicationState(environment);
+        if (state.publicationVersion() != expectedVersion) {
+            throw PublicationException.versionConflict(expectedVersion, state);
+        }
+        if (state.currentRevisionNumber() == 0
+                || sourceRevisionNumber >= state.currentRevisionNumber()) {
+            throw new PublicationException(
+                    PublicationError.INVALID_ROLLBACK_SOURCE,
+                    "Rollback source must be an older revision from this environment");
+        }
+
+        HistoricalSnapshot source = loadHistoricalSnapshot(
+                environment,
+                sourceRevisionNumber);
+        long revisionNumber = state.currentRevisionNumber() + 1;
+        long publicationVersion = expectedVersion + 1;
+        PublishedSnapshot restored = new PublishedSnapshot(
+                PublishedSnapshotCodec.SCHEMA_VERSION,
+                environment.organizationId(),
+                environment.projectId(),
+                environment.id(),
+                revisionNumber,
+                PublishedSnapshotCodec.ALGORITHM_VERSION,
+                source.document().flags(),
+                source.document().targetingConfiguration());
+        EncodedSnapshot encoded;
+        try {
+            encoded = snapshotCodec.encode(restored);
+        } catch (SnapshotCodecException exception) {
+            throw new PublicationException(
+                    PublicationError.INVALID_CONFIGURATION,
+                    "Historical configuration cannot be restored",
+                    exception);
+        }
+
+        UUID revisionId = UUID.randomUUID();
+        Instant publishedAt = now();
+        String correlationId = MDC.get(CORRELATION_ID_MDC_KEY);
+        insertRevision(
+                revisionId,
+                environment,
+                revisionNumber,
+                RevisionKind.ROLLBACK,
+                source.revisionId(),
+                source.revisionNumber(),
+                encoded,
+                identity.actorId(),
+                correlationId,
+                publishedAt);
+        insertSnapshot(
+                revisionId,
+                environment,
+                revisionNumber,
+                encoded,
+                publishedAt);
+        insertAuditEvent(
+                revisionId,
+                environment,
+                revisionNumber,
+                ROLLED_BACK_EVENT,
+                identity.actorId(),
+                correlationId,
+                publishedAt);
+        auditTrailService.append(new AuditCommand(
+                environment.organizationId(),
+                environment.projectId(),
+                environment.id(),
+                identity.actorId(),
+                AuditAction.CONFIGURATION_ROLLED_BACK,
+                AuditResourceType.CONFIGURATION_REVISION,
+                revisionId,
+                revisionId,
+                revisionNumber,
+                Map.of(
+                        "checksum", encoded.checksum(),
+                        "revisionKind", RevisionKind.ROLLBACK.name(),
+                        "sourceChecksum", source.checksum(),
+                        "sourceRevisionNumber",
+                        Long.toString(source.revisionNumber())),
+                publishedAt));
+        insertOutboxEvent(
+                revisionId,
+                environment,
+                revisionNumber,
+                encoded.checksum(),
+                publishedAt);
+        moveCurrentPointer(
+                revisionId,
+                environment,
+                revisionNumber,
+                expectedVersion,
+                publicationVersion,
+                publishedAt);
+
+        return new PublishedRevision(
+                revisionId,
+                environment.organizationId(),
+                environment.projectId(),
+                environment.id(),
+                revisionNumber,
+                publicationVersion,
+                RevisionKind.ROLLBACK,
+                source.revisionId(),
+                source.revisionNumber(),
                 PublishedSnapshotCodec.SCHEMA_VERSION,
                 PublishedSnapshotCodec.ALGORITHM_VERSION,
                 encoded.checksum(),
@@ -188,6 +353,9 @@ public class PublicationService {
                        revision.environment_id,
                        revision.revision_number,
                        publication.pointer_version,
+                       revision.revision_kind,
+                       revision.source_revision_id,
+                       revision.source_revision_number,
                        revision.snapshot_schema_version,
                        revision.algorithm_version,
                        revision.checksum,
@@ -370,10 +538,76 @@ public class PublicationService {
                 .orElseGet(PublicationState::unpublished);
     }
 
+    private HistoricalSnapshot loadHistoricalSnapshot(
+            Environment environment,
+            long revisionNumber) {
+        String sql = """
+                SELECT revision.id,
+                       revision.revision_number,
+                       revision.checksum,
+                       snapshot.payload
+                FROM flagforge.configuration_revisions revision
+                JOIN flagforge.configuration_snapshots snapshot
+                  ON snapshot.organization_id = revision.organization_id
+                 AND snapshot.project_id = revision.project_id
+                 AND snapshot.environment_id = revision.environment_id
+                 AND snapshot.revision_id = revision.id
+                 AND snapshot.revision_number = revision.revision_number
+                WHERE revision.organization_id = :organizationId
+                  AND revision.project_id = :projectId
+                  AND revision.environment_id = :environmentId
+                  AND revision.revision_number = :revisionNumber
+                """;
+        HistoricalSnapshotRow row = jdbcTemplate.query(
+                        sql,
+                        Map.of(
+                                "organizationId", environment.organizationId(),
+                                "projectId", environment.projectId(),
+                                "environmentId", environment.id(),
+                                "revisionNumber", revisionNumber),
+                        (resultSet, rowNumber) -> new HistoricalSnapshotRow(
+                                resultSet.getObject("id", UUID.class),
+                                resultSet.getLong("revision_number"),
+                                resultSet.getString("checksum"),
+                                resultSet.getBytes("payload")))
+                .stream()
+                .findFirst()
+                .orElseThrow(() -> new PublicationException(
+                        PublicationError.INVALID_ROLLBACK_SOURCE,
+                        "Rollback source revision does not exist in this environment"));
+        PublishedSnapshot document;
+        try {
+            document = snapshotCodec.decode(row.payload(), row.checksum());
+        } catch (SnapshotCodecException exception) {
+            throw new PublicationException(
+                    PublicationError.INVALID_CONFIGURATION,
+                    "Historical configuration snapshot is invalid",
+                    exception);
+        }
+        boolean identityMatches = environment.organizationId().equals(
+                        document.organizationId())
+                && environment.projectId().equals(document.projectId())
+                && environment.id().equals(document.environmentId())
+                && row.revisionNumber() == document.revisionNumber();
+        if (!identityMatches) {
+            throw new PublicationException(
+                    PublicationError.INVALID_CONFIGURATION,
+                    "Historical snapshot identity does not match its revision");
+        }
+        return new HistoricalSnapshot(
+                row.revisionId(),
+                row.revisionNumber(),
+                row.checksum(),
+                document);
+    }
+
     private void insertRevision(
             UUID revisionId,
             Environment environment,
             long revisionNumber,
+            RevisionKind revisionKind,
+            UUID sourceRevisionId,
+            Long sourceRevisionNumber,
             EncodedSnapshot encoded,
             String actorId,
             String correlationId,
@@ -385,6 +619,9 @@ public class PublicationService {
                     project_id,
                     environment_id,
                     revision_number,
+                    revision_kind,
+                    source_revision_id,
+                    source_revision_number,
                     snapshot_schema_version,
                     algorithm_version,
                     checksum,
@@ -397,6 +634,9 @@ public class PublicationService {
                     :projectId,
                     :environmentId,
                     :revisionNumber,
+                    :revisionKind,
+                    :sourceRevisionId,
+                    :sourceRevisionNumber,
                     :schemaVersion,
                     :algorithmVersion,
                     :checksum,
@@ -408,6 +648,9 @@ public class PublicationService {
         jdbcTemplate.update(
                 sql,
                 baseParameters(revisionId, environment, revisionNumber, publishedAt)
+                        .addValue("revisionKind", revisionKind.name())
+                        .addValue("sourceRevisionId", sourceRevisionId)
+                        .addValue("sourceRevisionNumber", sourceRevisionNumber)
                         .addValue("schemaVersion", PublishedSnapshotCodec.SCHEMA_VERSION)
                         .addValue("algorithmVersion", PublishedSnapshotCodec.ALGORITHM_VERSION)
                         .addValue("checksum", encoded.checksum())
@@ -463,6 +706,7 @@ public class PublicationService {
             UUID revisionId,
             Environment environment,
             long revisionNumber,
+            String action,
             String actorId,
             String correlationId,
             Instant publishedAt) {
@@ -496,7 +740,7 @@ public class PublicationService {
                 baseParameters(revisionId, environment, revisionNumber, publishedAt)
                         .addValue("auditId", UUID.randomUUID())
                         .addValue("actorId", actorId)
-                        .addValue("action", PUBLISHED_EVENT)
+                        .addValue("action", action)
                         .addValue("correlationId", correlationId));
     }
 
@@ -639,6 +883,9 @@ public class PublicationService {
                 resultSet.getObject("environment_id", UUID.class),
                 resultSet.getLong("revision_number"),
                 resultSet.getLong("pointer_version"),
+                RevisionKind.valueOf(resultSet.getString("revision_kind")),
+                resultSet.getObject("source_revision_id", UUID.class),
+                nullableLong(resultSet, "source_revision_number"),
                 resultSet.getInt("snapshot_schema_version"),
                 resultSet.getString("algorithm_version"),
                 resultSet.getString("checksum"),
@@ -646,6 +893,12 @@ public class PublicationService {
                 resultSet.getString("published_by"),
                 resultSet.getString("correlation_id"),
                 resultSet.getTimestamp("published_at").toInstant());
+    }
+
+    private static Long nullableLong(ResultSet resultSet, String column)
+            throws SQLException {
+        long value = resultSet.getLong(column);
+        return resultSet.wasNull() ? null : value;
     }
 
     private static PublishedValueType parseValueType(String valueType) {
@@ -685,6 +938,29 @@ public class PublicationService {
                 cause);
     }
 
+    private record HistoricalSnapshotRow(
+            UUID revisionId,
+            long revisionNumber,
+            String checksum,
+            byte[] payload) {
+
+        private HistoricalSnapshotRow {
+            payload = payload.clone();
+        }
+
+        @Override
+        public byte[] payload() {
+            return payload.clone();
+        }
+    }
+
+    private record HistoricalSnapshot(
+            UUID revisionId,
+            long revisionNumber,
+            String checksum,
+            PublishedSnapshot document) {
+    }
+
     private record MutableFlag(
             String key,
             PublishedValueType valueType,
@@ -711,6 +987,9 @@ public class PublicationService {
             UUID environmentId,
             long revisionNumber,
             long publicationVersion,
+            RevisionKind revisionKind,
+            UUID sourceRevisionId,
+            Long sourceRevisionNumber,
             int snapshotSchemaVersion,
             String algorithmVersion,
             String checksum,
@@ -720,9 +999,15 @@ public class PublicationService {
             Instant publishedAt) {
     }
 
+    public enum RevisionKind {
+        PUBLISH,
+        ROLLBACK
+    }
+
     public enum PublicationError {
         INVALID_CONFIGURATION,
         INVALID_EXPECTED_VERSION,
+        INVALID_ROLLBACK_SOURCE,
         VERSION_CONFLICT
     }
 

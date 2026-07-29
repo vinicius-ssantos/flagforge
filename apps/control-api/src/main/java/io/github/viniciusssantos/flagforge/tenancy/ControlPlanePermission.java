@@ -12,5 +12,6 @@ public enum ControlPlanePermission {
     FLAG_READ,
     FLAG_WRITE,
     SDK_CREDENTIAL_READ,
-    SDK_CREDENTIAL_MANAGE
+    SDK_CREDENTIAL_MANAGE,
+    AUDIT_READ
 }

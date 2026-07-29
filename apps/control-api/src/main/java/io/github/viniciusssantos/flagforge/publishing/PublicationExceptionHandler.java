@@ -2,6 +2,7 @@ package io.github.viniciusssantos.flagforge.publishing;
 
 import java.net.URI;
 
+import io.github.viniciusssantos.flagforge.audit.AuditController;
 import io.github.viniciusssantos.flagforge.publishing.PublicationService.PublicationError;
 import io.github.viniciusssantos.flagforge.publishing.PublicationService.PublicationException;
 
@@ -14,7 +15,11 @@ import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
-@RestControllerAdvice(assignableTypes = PublicationController.class)
+@RestControllerAdvice(assignableTypes = {
+        PublicationController.class,
+        RevisionHistoryController.class,
+        AuditController.class
+})
 final class PublicationExceptionHandler {
 
     private static final String CORRELATION_ATTRIBUTE =
@@ -37,6 +42,20 @@ final class PublicationExceptionHandler {
         if (exception.validationCode() != null) {
             problem.setProperty("validationCode", exception.validationCode());
         }
+        return ResponseEntity.badRequest().body(problem);
+    }
+
+    @ExceptionHandler(IllegalArgumentException.class)
+    ResponseEntity<ProblemDetail> handleInvalidArgument(
+            IllegalArgumentException exception,
+            HttpServletRequest request) {
+        ProblemDetail problem = problem(
+                HttpStatus.BAD_REQUEST,
+                "Invalid history request",
+                "urn:flagforge:problem:invalid-history-request",
+                exception.getMessage(),
+                request);
+        problem.setProperty("errorCode", "INVALID_HISTORY_REQUEST");
         return ResponseEntity.badRequest().body(problem);
     }
 

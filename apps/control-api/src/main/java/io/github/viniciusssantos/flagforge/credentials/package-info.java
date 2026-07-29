@@ -1,4 +1,4 @@
 @org.springframework.modulith.ApplicationModule(
         displayName = "SDK Credentials",
-        allowedDependencies = "tenancy")
+        allowedDependencies = {"tenancy", "audit"})
 package io.github.viniciusssantos.flagforge.credentials;

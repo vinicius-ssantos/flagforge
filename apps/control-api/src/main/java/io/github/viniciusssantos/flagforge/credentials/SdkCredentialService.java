@@ -17,6 +17,10 @@ import java.util.UUID;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import io.github.viniciusssantos.flagforge.audit.AuditTrailService;
+import io.github.viniciusssantos.flagforge.audit.AuditTrailService.AuditAction;
+import io.github.viniciusssantos.flagforge.audit.AuditTrailService.AuditCommand;
+import io.github.viniciusssantos.flagforge.audit.AuditTrailService.AuditResourceType;
 import io.github.viniciusssantos.flagforge.tenancy.ControlPlanePermission;
 import io.github.viniciusssantos.flagforge.tenancy.Environment;
 import io.github.viniciusssantos.flagforge.tenancy.TenantAccessException;
@@ -61,15 +65,18 @@ public class SdkCredentialService {
     private final NamedParameterJdbcTemplate jdbcTemplate;
     private final TenantAuthorizationService authorizationService;
     private final TenantHierarchyService tenantHierarchyService;
+    private final AuditTrailService auditTrailService;
     private final SecureRandom secureRandom;
 
     public SdkCredentialService(
             NamedParameterJdbcTemplate jdbcTemplate,
             TenantAuthorizationService authorizationService,
-            TenantHierarchyService tenantHierarchyService) {
+            TenantHierarchyService tenantHierarchyService,
+            AuditTrailService auditTrailService) {
         this.jdbcTemplate = jdbcTemplate;
         this.authorizationService = authorizationService;
         this.tenantHierarchyService = tenantHierarchyService;
+        this.auditTrailService = auditTrailService;
         this.secureRandom = new SecureRandom();
     }
 
@@ -79,7 +86,26 @@ public class SdkCredentialService {
                 ControlPlanePermission.SDK_CREDENTIAL_MANAGE);
         Environment environment = tenantHierarchyService.findEnvironment(environmentId);
         ensureSameOrganization(identity, environment.organizationId());
-        return issue(identity.organizationId(), environment.id(), name, null);
+        IssuedCredential issued = issue(
+                identity.organizationId(),
+                environment.id(),
+                name,
+                null);
+        auditTrailService.append(new AuditCommand(
+                identity.organizationId(),
+                environment.projectId(),
+                environment.id(),
+                identity.actorId(),
+                AuditAction.SDK_CREDENTIAL_CREATED,
+                AuditResourceType.SDK_CREDENTIAL,
+                issued.metadata().id(),
+                null,
+                null,
+                Map.of(
+                        "scope", issued.metadata().scope().name(),
+                        "status", issued.metadata().status().name()),
+                issued.metadata().createdAt()));
+        return issued;
     }
 
     @Transactional(readOnly = true)
@@ -117,13 +143,31 @@ public class SdkCredentialService {
         if (current.status() != CredentialStatus.ACTIVE) {
             throw new IllegalStateException("SDK credential is not active");
         }
+        Environment environment = tenantHierarchyService.findEnvironment(
+                current.environmentId());
+        ensureSameOrganization(identity, environment.organizationId());
 
         IssuedCredential replacement = issue(
                 current.organizationId(),
                 current.environmentId(),
                 current.name(),
                 current.id());
-        revokeRow(current);
+        CredentialRow revoked = revokeRow(current);
+        auditTrailService.append(new AuditCommand(
+                identity.organizationId(),
+                environment.projectId(),
+                environment.id(),
+                identity.actorId(),
+                AuditAction.SDK_CREDENTIAL_ROTATED,
+                AuditResourceType.SDK_CREDENTIAL,
+                current.id(),
+                null,
+                null,
+                Map.of(
+                        "replacementId", replacement.metadata().id().toString(),
+                        "previousStatus", current.status().name(),
+                        "newStatus", revoked.status().name()),
+                revoked.revokedAt()));
         return replacement;
     }
 
@@ -136,7 +180,25 @@ public class SdkCredentialService {
         if (current.status() == CredentialStatus.REVOKED) {
             return toMetadata(current);
         }
-        return toMetadata(revokeRow(current));
+        Environment environment = tenantHierarchyService.findEnvironment(
+                current.environmentId());
+        ensureSameOrganization(identity, environment.organizationId());
+        CredentialRow revoked = revokeRow(current);
+        auditTrailService.append(new AuditCommand(
+                identity.organizationId(),
+                environment.projectId(),
+                environment.id(),
+                identity.actorId(),
+                AuditAction.SDK_CREDENTIAL_REVOKED,
+                AuditResourceType.SDK_CREDENTIAL,
+                current.id(),
+                null,
+                null,
+                Map.of(
+                        "previousStatus", current.status().name(),
+                        "newStatus", revoked.status().name()),
+                revoked.revokedAt()));
+        return toMetadata(revoked);
     }
 
     @Transactional(readOnly = true)
