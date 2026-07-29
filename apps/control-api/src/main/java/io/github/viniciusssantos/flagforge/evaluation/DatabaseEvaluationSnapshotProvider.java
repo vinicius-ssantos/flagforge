@@ -1,8 +1,7 @@
 package io.github.viniciusssantos.flagforge.evaluation;
 
-import java.sql.ResultSet;
-import java.sql.SQLException;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -10,9 +9,16 @@ import java.util.UUID;
 
 import io.github.viniciusssantos.flagforge.credentials.SdkCredentialService.SdkPrincipal;
 import io.github.viniciusssantos.flagforge.evaluation.EvaluationApi.ValueType;
+import io.github.viniciusssantos.flagforge.publishing.PublishedSnapshotCodec;
+import io.github.viniciusssantos.flagforge.publishing.PublishedSnapshotCodec.PublishedFlag;
+import io.github.viniciusssantos.flagforge.publishing.PublishedSnapshotCodec.PublishedSnapshot;
+import io.github.viniciusssantos.flagforge.publishing.PublishedSnapshotCodec.PublishedValueType;
+import io.github.viniciusssantos.flagforge.publishing.PublishedSnapshotCodec.PublishedVariant;
+import io.github.viniciusssantos.flagforge.publishing.PublishedSnapshotCodec.SnapshotCodecException;
 import io.github.viniciusssantos.flagforge.targeting.TargetingEngine.FlagTarget;
 import io.github.viniciusssantos.flagforge.targeting.TargetingEngine.TargetingConfiguration;
 
+import org.springframework.dao.DataRetrievalFailureException;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
@@ -22,10 +28,13 @@ public class DatabaseEvaluationSnapshotProvider
         implements EvaluationSnapshotProvider {
 
     private final NamedParameterJdbcTemplate jdbcTemplate;
+    private final PublishedSnapshotCodec snapshotCodec;
 
     public DatabaseEvaluationSnapshotProvider(
-            NamedParameterJdbcTemplate jdbcTemplate) {
+            NamedParameterJdbcTemplate jdbcTemplate,
+            PublishedSnapshotCodec snapshotCodec) {
         this.jdbcTemplate = jdbcTemplate;
+        this.snapshotCodec = snapshotCodec;
     }
 
     @Override
@@ -33,159 +42,171 @@ public class DatabaseEvaluationSnapshotProvider
     public Optional<EvaluationSnapshot> load(
             SdkPrincipal principal,
             String flagKey) {
-        Optional<EnvironmentRow> environment = findEnvironment(
+        Optional<PublishedSnapshotRow> stored = loadCurrentSnapshot(
                 principal.organizationId(),
                 principal.environmentId());
-        if (environment.isEmpty()) {
+        if (stored.isEmpty()) {
             return Optional.empty();
         }
 
-        EnvironmentRow environmentRow = environment.get();
-        Optional<FlagRow> flag = findFlag(
-                principal.organizationId(),
-                environmentRow.projectId(),
-                flagKey);
-        if (flag.isEmpty()) {
+        PublishedSnapshotRow row = stored.get();
+        PublishedSnapshot document;
+        try {
+            document = snapshotCodec.decode(row.payload(), row.checksum());
+            validateIdentity(principal, row, document);
+        } catch (SnapshotCodecException | IllegalStateException exception) {
+            throw new DataRetrievalFailureException(
+                    "Published evaluation snapshot is invalid",
+                    exception);
+        }
+
+        Optional<PublishedFlag> requestedFlag = document.flags().stream()
+                .filter(flag -> flag.key().equals(flagKey))
+                .findFirst();
+        if (requestedFlag.isEmpty()) {
             return Optional.empty();
         }
 
-        FlagRow flagRow = flag.get();
-        Map<String, VariantValue> variants = loadVariants(
-                principal.organizationId(),
-                environmentRow.projectId(),
-                flagRow.id());
+        PublishedFlag flag = requestedFlag.get();
+        Map<String, VariantValue> variants = mapVariants(flag);
+        List<FlagTarget> flagTargets = document.flags().stream()
+                .map(DatabaseEvaluationSnapshotProvider::mapFlagTarget)
+                .toList();
         TargetingConfiguration targetingConfiguration =
-                new TargetingConfiguration(
-                        List.of(new FlagTarget(
-                                flagKey,
-                                variants.keySet(),
-                                flagRow.defaultVariant(),
-                                List.of(),
-                                List.of())),
-                        List.of());
-        String configurationVersion = "db-live-env-"
-                + environmentRow.version()
-                + "-flag-"
-                + flagRow.version();
+                new TargetingConfiguration(flagTargets, List.of());
+        String configurationVersion = "revision-"
+                + document.revisionNumber()
+                + "-sha256-"
+                + row.checksum();
 
         return Optional.of(new EvaluationSnapshot(
-                principal.organizationId(),
-                environmentRow.projectId(),
-                principal.environmentId(),
+                document.organizationId(),
+                document.projectId(),
+                document.environmentId(),
                 configurationVersion,
-                flagRow.active(),
+                flag.enabled(),
                 false,
-                flagRow.valueType(),
-                flagRow.defaultVariant(),
+                mapValueType(flag.valueType()),
+                flag.defaultVariant(),
                 variants,
                 targetingConfiguration,
                 null));
     }
 
-    private Optional<EnvironmentRow> findEnvironment(
+    private Optional<PublishedSnapshotRow> loadCurrentSnapshot(
             UUID organizationId,
             UUID environmentId) {
         String sql = """
-                SELECT project_id, version
-                FROM flagforge.environments
-                WHERE organization_id = :organizationId
-                  AND id = :environmentId
+                SELECT publication.project_id,
+                       publication.current_revision_id,
+                       publication.current_revision_number,
+                       revision.snapshot_schema_version,
+                       revision.algorithm_version,
+                       revision.checksum,
+                       snapshot.payload,
+                       snapshot.payload_size
+                FROM flagforge.environment_publication_state publication
+                JOIN flagforge.configuration_revisions revision
+                  ON revision.organization_id = publication.organization_id
+                 AND revision.project_id = publication.project_id
+                 AND revision.environment_id = publication.environment_id
+                 AND revision.id = publication.current_revision_id
+                 AND revision.revision_number = publication.current_revision_number
+                JOIN flagforge.configuration_snapshots snapshot
+                  ON snapshot.organization_id = revision.organization_id
+                 AND snapshot.project_id = revision.project_id
+                 AND snapshot.environment_id = revision.environment_id
+                 AND snapshot.revision_id = revision.id
+                 AND snapshot.revision_number = revision.revision_number
+                WHERE publication.organization_id = :organizationId
+                  AND publication.environment_id = :environmentId
                 """;
         return jdbcTemplate.query(
                         sql,
                         Map.of(
                                 "organizationId", organizationId,
                                 "environmentId", environmentId),
-                        (resultSet, rowNumber) -> new EnvironmentRow(
+                        (resultSet, rowNumber) -> new PublishedSnapshotRow(
                                 resultSet.getObject("project_id", UUID.class),
-                                resultSet.getLong("version")))
+                                resultSet.getObject("current_revision_id", UUID.class),
+                                resultSet.getLong("current_revision_number"),
+                                resultSet.getInt("snapshot_schema_version"),
+                                resultSet.getString("algorithm_version"),
+                                resultSet.getString("checksum"),
+                                resultSet.getBytes("payload"),
+                                resultSet.getInt("payload_size")))
                 .stream()
                 .findFirst();
     }
 
-    private Optional<FlagRow> findFlag(
-            UUID organizationId,
-            UUID projectId,
-            String flagKey) {
-        String sql = """
-                SELECT id,
-                       value_type,
-                       default_variant_key,
-                       state,
-                       version
-                FROM flagforge.feature_flags
-                WHERE organization_id = :organizationId
-                  AND project_id = :projectId
-                  AND flag_key = :flagKey
-                """;
-        return jdbcTemplate.query(
-                        sql,
-                        Map.of(
-                                "organizationId", organizationId,
-                                "projectId", projectId,
-                                "flagKey", flagKey),
-                        (resultSet, rowNumber) -> mapFlag(resultSet))
-                .stream()
-                .findFirst();
-    }
-
-    private Map<String, VariantValue> loadVariants(
-            UUID organizationId,
-            UUID projectId,
-            UUID flagId) {
-        String sql = """
-                SELECT variant_key,
-                       value_type,
-                       boolean_value,
-                       string_value
-                FROM flagforge.feature_flag_variants
-                WHERE organization_id = :organizationId
-                  AND project_id = :projectId
-                  AND flag_id = :flagId
-                ORDER BY variant_key
-                """;
+    private static Map<String, VariantValue> mapVariants(PublishedFlag flag) {
         Map<String, VariantValue> variants = new LinkedHashMap<>();
-        jdbcTemplate.query(
-                sql,
-                Map.of(
-                        "organizationId", organizationId,
-                        "projectId", projectId,
-                        "flagId", flagId),
-                resultSet -> {
-                    String variantKey = resultSet.getString("variant_key");
-                    ValueType valueType = ValueType.valueOf(
-                            resultSet.getString("value_type"));
-                    Object value = switch (valueType) {
-                        case BOOLEAN -> resultSet.getBoolean("boolean_value");
-                        case STRING -> resultSet.getString("string_value");
-                    };
-                    variants.put(
-                            variantKey,
-                            new VariantValue(valueType, value));
-                });
+        for (PublishedVariant variant : flag.variants()) {
+            Object value = switch (variant.valueType()) {
+                case BOOLEAN -> variant.booleanValue();
+                case STRING -> variant.stringValue();
+            };
+            variants.put(
+                    variant.key(),
+                    new VariantValue(mapValueType(variant.valueType()), value));
+        }
         return Map.copyOf(variants);
     }
 
-    private static FlagRow mapFlag(ResultSet resultSet)
-            throws SQLException {
-        return new FlagRow(
-                resultSet.getObject("id", UUID.class),
-                ValueType.valueOf(resultSet.getString("value_type")),
-                resultSet.getString("default_variant_key"),
-                "ACTIVE".equals(resultSet.getString("state")),
-                resultSet.getLong("version"));
+    private static FlagTarget mapFlagTarget(PublishedFlag flag) {
+        LinkedHashSet<String> variantKeys = new LinkedHashSet<>();
+        for (PublishedVariant variant : flag.variants()) {
+            variantKeys.add(variant.key());
+        }
+        return new FlagTarget(
+                flag.key(),
+                variantKeys,
+                flag.defaultVariant(),
+                List.of(),
+                List.of());
     }
 
-    private record EnvironmentRow(
+    private static ValueType mapValueType(PublishedValueType valueType) {
+        return switch (valueType) {
+            case BOOLEAN -> ValueType.BOOLEAN;
+            case STRING -> ValueType.STRING;
+        };
+    }
+
+    private static void validateIdentity(
+            SdkPrincipal principal,
+            PublishedSnapshotRow row,
+            PublishedSnapshot document) {
+        boolean matches = principal.organizationId().equals(document.organizationId())
+                && principal.environmentId().equals(document.environmentId())
+                && row.projectId().equals(document.projectId())
+                && row.revisionNumber() == document.revisionNumber()
+                && row.schemaVersion() == document.schemaVersion()
+                && row.algorithmVersion().equals(document.algorithmVersion())
+                && row.payloadSize() == row.payload().length;
+        if (!matches) {
+            throw new IllegalStateException(
+                    "Published snapshot identity does not match its current pointer");
+        }
+    }
+
+    private record PublishedSnapshotRow(
             UUID projectId,
-            long version) {
-    }
+            UUID revisionId,
+            long revisionNumber,
+            int schemaVersion,
+            String algorithmVersion,
+            String checksum,
+            byte[] payload,
+            int payloadSize) {
 
-    private record FlagRow(
-            UUID id,
-            ValueType valueType,
-            String defaultVariant,
-            boolean active,
-            long version) {
+        private PublishedSnapshotRow {
+            payload = payload.clone();
+        }
+
+        @Override
+        public byte[] payload() {
+            return payload.clone();
+        }
     }
 }
