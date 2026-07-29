@@ -84,6 +84,19 @@ CREATE INDEX change_requests_environment_history_idx
     );
 
 ALTER TABLE flagforge.audit_events
+    DROP CONSTRAINT audit_events_resource_type_supported;
+
+ALTER TABLE flagforge.audit_events
+    ADD CONSTRAINT audit_events_resource_type_supported
+        CHECK (resource_type IN (
+            'FEATURE_FLAG',
+            'SDK_CREDENTIAL',
+            'CONFIGURATION_REVISION',
+            'CHANGE_REQUEST',
+            'ENVIRONMENT'
+        ));
+
+ALTER TABLE flagforge.audit_events
     DROP CONSTRAINT audit_events_action_supported;
 
 ALTER TABLE flagforge.audit_events
