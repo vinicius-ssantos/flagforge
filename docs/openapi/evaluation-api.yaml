@@ -1,0 +1,292 @@
+openapi: 3.1.0
+info:
+  title: FlagForge Evaluation API
+  version: 1.0.0
+  description: |
+    Server-side feature evaluation contract. The environment is derived from
+    the SDK credential and cannot be selected by request parameters.
+servers:
+  - url: http://localhost:8080
+paths:
+  /api/v1/evaluate/{flagKey}:
+    post:
+      operationId: evaluateFlag
+      summary: Evaluate one feature flag
+      security:
+        - sdkCredential: []
+      parameters:
+        - name: flagKey
+          in: path
+          required: true
+          description: Stable project-owned feature flag key.
+          schema:
+            type: string
+            pattern: '^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EvaluationRequest'
+            examples:
+              booleanEvaluation:
+                summary: Boolean evaluation with typed attributes
+                value:
+                  type: BOOLEAN
+                  defaultValue: false
+                  targetingKey: subject-123
+                  attributes:
+                    country:
+                      type: STRING
+                      value: BR
+                    beta:
+                      type: BOOLEAN
+                      value: true
+                    score:
+                      type: NUMBER
+                      value: 91.5
+      responses:
+        '200':
+          description: |
+            Evaluation completed. Domain errors such as an unknown flag or a
+            requested type mismatch return the caller fallback with reason ERROR.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EvaluationResponse'
+              examples:
+                targetingMatch:
+                  summary: An ordered targeting rule matched
+                  value:
+                    flagKey: checkout-v2
+                    valueType: BOOLEAN
+                    value: true
+                    variant: enabled
+                    reason: TARGETING_MATCH
+                    sourceReason: null
+                    configurationVersion: revision-42
+                    error:
+                      code: NONE
+                      message: null
+                    matchedRuleKey: internal-beta
+                    failedPrerequisiteKey: null
+                    bucket: null
+                    stale: false
+                default:
+                  summary: No targeting rule matched
+                  value:
+                    flagKey: checkout-v2
+                    valueType: BOOLEAN
+                    value: false
+                    variant: disabled
+                    reason: DEFAULT
+                    sourceReason: null
+                    configurationVersion: revision-42
+                    error:
+                      code: NONE
+                      message: null
+                    matchedRuleKey: null
+                    failedPrerequisiteKey: null
+                    bucket: null
+                    stale: false
+                stale:
+                  summary: Last-known-good snapshot served
+                  value:
+                    flagKey: checkout-v2
+                    valueType: BOOLEAN
+                    value: true
+                    variant: enabled
+                    reason: STALE
+                    sourceReason: SPLIT
+                    configurationVersion: revision-41
+                    error:
+                      code: NONE
+                      message: null
+                    matchedRuleKey: null
+                    failedPrerequisiteKey: null
+                    bucket: 18472
+                    stale: true
+                errorFallback:
+                  summary: Unknown flag returns the caller fallback
+                  value:
+                    flagKey: unknown-flag
+                    valueType: BOOLEAN
+                    value: false
+                    variant: null
+                    reason: ERROR
+                    sourceReason: null
+                    configurationVersion: null
+                    error:
+                      code: FLAG_NOT_FOUND
+                      message: Flag not found; caller fallback returned.
+                    matchedRuleKey: null
+                    failedPrerequisiteKey: null
+                    bucket: null
+                    stale: false
+        '400':
+          description: Malformed request or typed value mismatch in the request.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+        '401':
+          description: Missing, malformed, revoked, or invalid SDK credential.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+components:
+  securitySchemes:
+    sdkCredential:
+      type: http
+      scheme: bearer
+      bearerFormat: FlagForge SDK credential
+      description: Environment-scoped credential in the ff_sdk_* format.
+  schemas:
+    EvaluationRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - type
+        - defaultValue
+        - targetingKey
+      properties:
+        type:
+          $ref: '#/components/schemas/ValueType'
+        defaultValue:
+          description: Caller-declared fallback with the exact requested type.
+          oneOf:
+            - type: boolean
+            - type: string
+        targetingKey:
+          type: string
+          minLength: 1
+          description: Stable subject key. It is never returned or used as a metric label.
+        attributes:
+          type: object
+          default: {}
+          maxProperties: 256
+          additionalProperties:
+            $ref: '#/components/schemas/TypedAttribute'
+    TypedAttribute:
+      type: object
+      additionalProperties: false
+      required:
+        - type
+        - value
+      properties:
+        type:
+          type: string
+          enum:
+            - BOOLEAN
+            - STRING
+            - NUMBER
+        value:
+          oneOf:
+            - type: boolean
+            - type: string
+            - type: number
+    EvaluationResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - flagKey
+        - valueType
+        - value
+        - reason
+        - error
+        - stale
+      properties:
+        flagKey:
+          type: string
+        valueType:
+          $ref: '#/components/schemas/ValueType'
+        value:
+          oneOf:
+            - type: boolean
+            - type: string
+        variant:
+          type:
+            - string
+            - 'null'
+        reason:
+          type: string
+          enum:
+            - TARGETING_MATCH
+            - SPLIT
+            - DEFAULT
+            - DISABLED
+            - PREREQUISITE_FAILED
+            - STALE
+            - ERROR
+        sourceReason:
+          type:
+            - string
+            - 'null'
+          description: Original decision reason when the effective reason is STALE.
+        configurationVersion:
+          type:
+            - string
+            - 'null'
+        error:
+          $ref: '#/components/schemas/ErrorMetadata'
+        matchedRuleKey:
+          type:
+            - string
+            - 'null'
+        failedPrerequisiteKey:
+          type:
+            - string
+            - 'null'
+        bucket:
+          type:
+            - integer
+            - 'null'
+          minimum: 0
+          maximum: 99999
+        stale:
+          type: boolean
+    ValueType:
+      type: string
+      enum:
+        - BOOLEAN
+        - STRING
+    ErrorMetadata:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+      properties:
+        code:
+          type: string
+          enum:
+            - NONE
+            - FLAG_NOT_FOUND
+            - TYPE_MISMATCH
+            - INVALID_REQUEST
+            - INVALID_CONTEXT
+            - INVALID_CONFIGURATION
+            - SNAPSHOT_UNAVAILABLE
+        message:
+          type:
+            - string
+            - 'null'
+    ProblemDetail:
+      type: object
+      properties:
+        type:
+          type: string
+          format: uri
+        title:
+          type: string
+        status:
+          type: integer
+        detail:
+          type: string
+        instance:
+          type: string
+          format: uri-reference
+        errorCode:
+          type: string
+        correlationId:
+          type: string

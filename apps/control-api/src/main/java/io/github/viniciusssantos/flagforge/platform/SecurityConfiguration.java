@@ -13,6 +13,7 @@ import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.AnonymousAuthenticationFilter;
 
 @Configuration(proxyBeanMethods = false)
 @ConditionalOnWebApplication(type = ConditionalOnWebApplication.Type.SERVLET)
@@ -21,7 +22,9 @@ class SecurityConfiguration {
     @Bean
     SecurityFilterChain securityFilterChain(
             HttpSecurity http,
-            ProblemDetailsResponseWriter problemDetailsResponseWriter) throws Exception {
+            ProblemDetailsResponseWriter problemDetailsResponseWriter,
+            SdkCredentialAuthenticationFilter sdkCredentialAuthenticationFilter)
+            throws Exception {
         http
                 .csrf(AbstractHttpConfigurer::disable)
                 .requestCache(AbstractHttpConfigurer::disable)
@@ -29,10 +32,17 @@ class SecurityConfiguration {
                 .authorizeHttpRequests(authorize -> authorize
                         .requestMatchers(EndpointRequest.to(HealthEndpoint.class, InfoEndpoint.class)).permitAll()
                         .requestMatchers("/livez", "/readyz").permitAll()
+                        .requestMatchers("/api/v1/evaluate/**")
+                        .hasAuthority(
+                                SdkCredentialAuthenticationFilter
+                                        .EVALUATE_AUTHORITY)
                         .anyRequest().denyAll())
                 .exceptionHandling(exceptions -> exceptions
                         .authenticationEntryPoint(problemDetailsResponseWriter::writeUnauthorized)
                         .accessDeniedHandler(problemDetailsResponseWriter::writeForbidden))
+                .addFilterBefore(
+                        sdkCredentialAuthenticationFilter,
+                        AnonymousAuthenticationFilter.class)
                 .headers(Customizer.withDefaults());
 
         return http.build();

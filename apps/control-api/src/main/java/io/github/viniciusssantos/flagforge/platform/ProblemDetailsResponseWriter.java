@@ -17,15 +17,15 @@ import org.springframework.stereotype.Component;
 import tools.jackson.databind.ObjectMapper;
 
 @Component
-final class ProblemDetailsResponseWriter {
+public final class ProblemDetailsResponseWriter {
 
     private final ObjectMapper objectMapper;
 
-    ProblemDetailsResponseWriter(ObjectMapper objectMapper) {
+    public ProblemDetailsResponseWriter(ObjectMapper objectMapper) {
         this.objectMapper = objectMapper;
     }
 
-    void writeUnauthorized(
+    public void writeUnauthorized(
             HttpServletRequest request,
             HttpServletResponse response,
             AuthenticationException exception) throws IOException {
@@ -38,7 +38,7 @@ final class ProblemDetailsResponseWriter {
                 "urn:flagforge:problem:authentication-required");
     }
 
-    void writeForbidden(
+    public void writeForbidden(
             HttpServletRequest request,
             HttpServletResponse response,
             AccessDeniedException exception) throws IOException {
