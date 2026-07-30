@@ -421,6 +421,46 @@ public class ChangeRequestService {
                         variant.valueType().name() + ":" + value);
             }
         }
+        for (var target : snapshot.targetingConfiguration().flags()) {
+            String path = "targeting.flags." + target.key();
+            values.put(path + ".defaultVariant", target.defaultVariant());
+            values.put(
+                    path + ".variants",
+                    String.join(",", new TreeSet<>(target.variants())));
+            for (int index = 0; index < target.prerequisites().size(); index++) {
+                var prerequisite = target.prerequisites().get(index);
+                values.put(
+                        path + ".prerequisites." + index,
+                        prerequisite.flagKey() + "="
+                                + prerequisite.expectedVariant());
+            }
+            for (var rule : target.rules()) {
+                String rulePath = path + ".rules." + rule.priority()
+                        + "." + rule.key();
+                values.put(rulePath + ".variant", rule.variantKey());
+                for (int index = 0; index < rule.conditions().size(); index++) {
+                    values.put(
+                            rulePath + ".conditions." + index,
+                            rule.conditions().get(index).toString());
+                }
+            }
+        }
+        for (var segment : snapshot.targetingConfiguration().segments()) {
+            String path = "targeting.segments." + segment.key();
+            values.put(
+                    path + ".includedTargetingKeys",
+                    String.join(",", new TreeSet<>(
+                            segment.includedTargetingKeys())));
+            values.put(
+                    path + ".excludedTargetingKeys",
+                    String.join(",", new TreeSet<>(
+                            segment.excludedTargetingKeys())));
+            for (int index = 0; index < segment.conditions().size(); index++) {
+                values.put(
+                        path + ".conditions." + index,
+                        segment.conditions().get(index).toString());
+            }
+        }
         return values;
     }
 
