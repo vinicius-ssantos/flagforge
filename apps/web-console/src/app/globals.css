@@ -52,20 +52,44 @@ dl div { display: grid; grid-template-columns: 1fr 1.3fr; gap: 16px; padding: 13
 dt { color: var(--muted); } dd { margin: 0; text-align: right; overflow-wrap: anywhere; }
 .healthy { color: var(--accent) !important; border-color: #316a4d !important; }
 .warning { color: #ffd987 !important; border-color: #715d2d !important; }
+.reviewWorkspace { margin-top: 56px; padding-top: 40px; border-top: 1px solid var(--line); }
+.reviewHeader { display: flex; justify-content: space-between; align-items: end; gap: 20px; margin-bottom: 24px; }
+.reviewHeader h2 { margin: 0; max-width: 720px; font-size: clamp(1.55rem, 3vw, 2.35rem); letter-spacing: -.035em; }
+.reviewGrid { display: grid; grid-template-columns: minmax(280px, .75fr) minmax(420px, 1.25fr); gap: 22px; align-items: start; }
+.diffPanel { min-height: 480px; }
+.diffContent { display: grid; gap: 20px; }
+.diffMeta { margin: 0; }
+.diffMeta code { font-size: .72rem; color: var(--accent); word-break: break-all; }
+.noChanges { margin: 0; padding: 20px; border: 1px dashed var(--line); border-radius: 12px; color: var(--muted); text-align: center; }
+.diffList { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
+.diffList li { display: grid; gap: 10px; padding: 15px; border: 1px solid var(--line); border-radius: 12px; background: rgba(7, 16, 13, .55); }
+.diffList code { overflow-wrap: anywhere; color: var(--text); }
+.diffType { width: max-content; border-radius: 999px; padding: 4px 8px; font-size: .68rem; font-weight: 850; letter-spacing: .08em; }
+.diffADDED { color: var(--accent); background: rgba(66, 233, 140, .12); }
+.diffREMOVED { color: var(--danger); background: rgba(255, 154, 154, .1); }
+.diffCHANGED { color: #ffd987; background: rgba(255, 217, 135, .1); }
+.diffValues { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.diffValues span { display: grid; gap: 5px; padding: 10px; border-radius: 9px; background: var(--panel-strong); overflow-wrap: anywhere; }
+.diffValues small { color: var(--muted); text-transform: uppercase; letter-spacing: .08em; }
+.reviewActions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.dangerButton { color: #2a0707; background: var(--danger); }
+.dangerButton:hover { background: #ffb3b3; }
+.reviewMessage { margin: 0; color: var(--accent); }
 
 @media (max-width: 900px) {
   .shell { grid-template-columns: 1fr; }
   .sidebar { border-right: 0; border-bottom: 1px solid var(--line); }
   .sidebarHint { display: none; }
   .tree { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .grid { grid-template-columns: 1fr; }
+  .grid, .reviewGrid { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 560px) {
   .workspace { padding: 28px 14px; }
-  .topbar { align-items: start; flex-direction: column; }
+  .topbar, .reviewHeader { align-items: start; flex-direction: column; }
   .tree { grid-template-columns: 1fr; }
   .panel { padding: 17px; }
   dl div { grid-template-columns: 1fr; gap: 4px; }
   dd { text-align: left; }
+  .diffValues, .reviewActions { grid-template-columns: 1fr; }
 }
