@@ -2,6 +2,8 @@
 
 import { FormEvent, useState } from "react";
 
+import { ChangeRequestReview } from "./change-request-review";
+
 type EvaluationResponse = {
   flagKey: string;
   valueType: "BOOLEAN" | "STRING";
@@ -120,6 +122,8 @@ export default function Home() {
             )}
           </section>
         </div>
+
+        <ChangeRequestReview />
       </section>
     </main>
   );
