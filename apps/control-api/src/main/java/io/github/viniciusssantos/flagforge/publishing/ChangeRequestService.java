@@ -19,6 +19,7 @@ import io.github.viniciusssantos.flagforge.audit.AuditTrailService.AuditAction;
 import io.github.viniciusssantos.flagforge.audit.AuditTrailService.AuditCommand;
 import io.github.viniciusssantos.flagforge.audit.AuditTrailService.AuditResourceType;
 import io.github.viniciusssantos.flagforge.publishing.PublicationService.PreparedPublication;
+import io.github.viniciusssantos.flagforge.publishing.PublicationService.PublicationException;
 import io.github.viniciusssantos.flagforge.publishing.PublicationService.PublishedRevision;
 import io.github.viniciusssantos.flagforge.publishing.PublishedSnapshotCodec.PublishedFlag;
 import io.github.viniciusssantos.flagforge.publishing.PublishedSnapshotCodec.PublishedSnapshot;
@@ -328,7 +329,7 @@ public class ChangeRequestService {
         try {
             verifyCandidate(environment, request);
             valid = true;
-        } catch (ChangeRequestException exception) {
+        } catch (ChangeRequestException | PublicationException exception) {
             valid = false;
         }
         return new CandidateDiff(
