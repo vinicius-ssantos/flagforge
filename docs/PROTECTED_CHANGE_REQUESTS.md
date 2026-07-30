@@ -28,11 +28,11 @@ Creation records:
 - next candidate revision number;
 - snapshot schema and allocation algorithm versions;
 - deterministic SHA-256 checksum;
-- bounded canonical candidate payload.
+- the exact bounded binary snapshot payload that publication will persist.
 
-Submission, approval, and publication recompile the current mutable draft and compare it in constant time with the stored checksum. Any flag or variant change invalidates the request with `CANDIDATE_CHANGED`. A publication version change returns `VERSION_CONFLICT`.
+Submission and approval rebuild the complete publication snapshot and compare its checksum in constant time with the stored candidate. The snapshot includes flags, variants, rules, prerequisites, segments, schema version, and allocation algorithm version. Any relevant draft change invalidates the request with `CANDIDATE_CHANGED`. A publication version change returns `VERSION_CONFLICT`.
 
-Approval therefore authorizes one exact candidate, not a moving environment draft.
+Publication compares the checksum of the revision actually inserted with the approved checksum in the same transaction. A mismatch rolls back revision, snapshot, pointer, audit, and outbox changes. Approval therefore authorizes one exact snapshot, not a moving environment draft.
 
 ## HTTP API
 
@@ -43,6 +43,7 @@ PUT /api/v1/environments/{environmentId}/approval-policy
 POST /api/v1/environments/{environmentId}/change-requests
 GET  /api/v1/environments/{environmentId}/change-requests
 GET  /api/v1/environments/{environmentId}/change-requests/{changeRequestId}
+GET  /api/v1/environments/{environmentId}/change-requests/{changeRequestId}/diff
 POST /api/v1/environments/{environmentId}/change-requests/{changeRequestId}/submit
 POST /api/v1/environments/{environmentId}/change-requests/{changeRequestId}/approve
 POST /api/v1/environments/{environmentId}/change-requests/{changeRequestId}/reject
@@ -67,6 +68,10 @@ Example request:
   "description": "Reviewed release candidate"
 }
 ```
+
+## Review UI and diff
+
+The Web Console loads the server-generated diff and displays stable paths such as `flags.checkout-v2.defaultVariant`, `targeting.flags.checkout-v2.rules.10.internal-beta.variant`, and `targeting.segments.staff.conditions.0`. Differences are classified as `ADDED`, `REMOVED`, or `CHANGED` with before/after values. A stale candidate disables approval in the UI; the backend remains the authorization and validity authority.
 
 ## Atomicity and audit
 
