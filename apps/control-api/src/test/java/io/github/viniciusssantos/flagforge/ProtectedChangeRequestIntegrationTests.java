@@ -24,15 +24,26 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.test.web.servlet.MockMvc;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @SpringBootTest
+@AutoConfigureMockMvc
 class ProtectedChangeRequestIntegrationTests
         extends PostgreSqlIntegrationTestSupport {
+
+    @Autowired
+    private MockMvc mockMvc;
 
     @Autowired
     private TenantHierarchyService tenantHierarchyService;
@@ -110,6 +121,31 @@ class ProtectedChangeRequestIntegrationTests
     }
 
     @Test
+    void exposesCandidateDiffToViewerThroughApi() throws Exception {
+        Fixture fixture = fixture("candidate-diff-api");
+        tenantHierarchyService.addMembership("viewer", MembershipRole.VIEWER);
+        var request = changeRequestService.create(
+                fixture.environment().id(), 0, "Review exact candidate", null);
+
+        mockMvc.perform(get("/api/v1/environments/"
+                        + fixture.environment().id()
+                        + "/change-requests/"
+                        + request.id()
+                        + "/diff")
+                        .with(authentication(tenantAuthentication(
+                                fixture.organization().id(),
+                                "viewer"))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.changeRequestId").value(
+                        request.id().toString()))
+                .andExpect(jsonPath("$.candidateRevision").value(1))
+                .andExpect(jsonPath("$.candidateValid").value(true))
+                .andExpect(jsonPath("$.differences[0].path").value(
+                        "flags.checkout-v2.defaultVariant"))
+                .andExpect(jsonPath("$.differences[0].type").value("ADDED"));
+    }
+
+    @Test
     void allowsDirectPublicationPolicyForDevelopmentAndViewerReads() {
         Fixture fixture = fixture("development-policy");
         tenantHierarchyService.addMembership("viewer", MembershipRole.VIEWER);
@@ -155,10 +191,16 @@ class ProtectedChangeRequestIntegrationTests
 
     private static void authenticate(UUID organizationId, String actorId) {
         SecurityContextHolder.getContext().setAuthentication(
-                UsernamePasswordAuthenticationToken.authenticated(
-                        new TenantPrincipal(organizationId, actorId),
-                        null,
-                        List.of()));
+                tenantAuthentication(organizationId, actorId));
+    }
+
+    private static Authentication tenantAuthentication(
+            UUID organizationId,
+            String actorId) {
+        return UsernamePasswordAuthenticationToken.authenticated(
+                new TenantPrincipal(organizationId, actorId),
+                null,
+                List.of());
     }
 
     private record Fixture(
