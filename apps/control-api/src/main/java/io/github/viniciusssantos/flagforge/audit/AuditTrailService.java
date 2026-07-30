@@ -305,14 +305,17 @@ public class AuditTrailService {
         CHANGE_REQUEST_CREATED,
         CHANGE_REQUEST_SUBMITTED,
         CHANGE_REQUEST_APPROVED,
-        CHANGE_REQUEST_REJECTED
+        CHANGE_REQUEST_REJECTED,
+        CHANGE_REQUEST_PUBLISHED,
+        ENVIRONMENT_APPROVAL_POLICY_CHANGED
     }
 
     public enum AuditResourceType {
         FEATURE_FLAG,
         SDK_CREDENTIAL,
         CONFIGURATION_REVISION,
-        CHANGE_REQUEST
+        CHANGE_REQUEST,
+        ENVIRONMENT
     }
 
     public record AuditCommand(

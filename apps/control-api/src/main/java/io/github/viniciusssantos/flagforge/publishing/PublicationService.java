@@ -74,6 +74,40 @@ public class PublicationService {
         return publish(environmentId, expectedVersion, null);
     }
 
+    @Transactional(readOnly = true)
+    public PreparedPublication prepare(
+            UUID environmentId,
+            long expectedVersion) {
+        Objects.requireNonNull(environmentId, "environmentId is required");
+        if (expectedVersion < 0) {
+            throw new PublicationException(
+                    PublicationError.INVALID_EXPECTED_VERSION,
+                    "Expected publication version cannot be negative");
+        }
+        TenantIdentity identity = authorizationService.require(
+                ControlPlanePermission.ENVIRONMENT_READ);
+        Environment environment = tenantHierarchyService.findEnvironment(environmentId);
+        ensureSameOrganization(identity, environment.organizationId());
+        PublicationState state = readPublicationState(environment);
+        if (state.publicationVersion() != expectedVersion) {
+            throw PublicationException.versionConflict(expectedVersion, state);
+        }
+        long revisionNumber = state.currentRevisionNumber() + 1;
+        EncodedSnapshot encoded = compileSnapshot(
+                environment,
+                revisionNumber,
+                null);
+        return new PreparedPublication(
+                environment.id(),
+                revisionNumber,
+                expectedVersion + 1,
+                encoded.snapshot().schemaVersion(),
+                encoded.snapshot().algorithmVersion(),
+                encoded.checksum(),
+                encoded.payload().length,
+                encoded.payload());
+    }
+
     @Transactional
     public PublishedRevision publish(
             UUID environmentId,
@@ -97,36 +131,10 @@ public class PublicationService {
         }
         long revisionNumber = state.currentRevisionNumber() + 1;
         long publicationVersion = expectedVersion + 1;
-        List<PublishedFlag> flags = compileCandidate(
-                environment.organizationId(),
-                environment.projectId());
-        TargetingConfiguration validatedConfiguration;
-        try {
-            validatedConfiguration = publicationGraphValidator.validate(
-                    flags,
-                    targetingConfiguration);
-        } catch (PublicationGraphException exception) {
-            throw PublicationException.invalidGraph(exception);
-        }
-        PublishedSnapshot snapshot = new PublishedSnapshot(
-                PublishedSnapshotCodec.SCHEMA_VERSION,
-                environment.organizationId(),
-                environment.projectId(),
-                environment.id(),
+        EncodedSnapshot encoded = compileSnapshot(
+                environment,
                 revisionNumber,
-                PublishedSnapshotCodec.ALGORITHM_VERSION,
-                flags,
-                validatedConfiguration);
-
-        EncodedSnapshot encoded;
-        try {
-            encoded = snapshotCodec.encode(snapshot);
-        } catch (SnapshotCodecException exception) {
-            throw new PublicationException(
-                    PublicationError.INVALID_CONFIGURATION,
-                    "Candidate configuration cannot be published",
-                    exception);
-        }
+                targetingConfiguration);
 
         UUID revisionId = UUID.randomUUID();
         Instant publishedAt = now();
@@ -387,6 +395,40 @@ public class PublicationService {
                 .findFirst();
     }
 
+    private EncodedSnapshot compileSnapshot(
+            Environment environment,
+            long revisionNumber,
+            TargetingConfiguration targetingConfiguration) {
+        List<PublishedFlag> flags = compileCandidate(
+                environment.organizationId(),
+                environment.projectId());
+        TargetingConfiguration validatedConfiguration;
+        try {
+            validatedConfiguration = publicationGraphValidator.validate(
+                    flags,
+                    targetingConfiguration);
+        } catch (PublicationGraphException exception) {
+            throw PublicationException.invalidGraph(exception);
+        }
+        PublishedSnapshot snapshot = new PublishedSnapshot(
+                PublishedSnapshotCodec.SCHEMA_VERSION,
+                environment.organizationId(),
+                environment.projectId(),
+                environment.id(),
+                revisionNumber,
+                PublishedSnapshotCodec.ALGORITHM_VERSION,
+                flags,
+                validatedConfiguration);
+        try {
+            return snapshotCodec.encode(snapshot);
+        } catch (SnapshotCodecException exception) {
+            throw new PublicationException(
+                    PublicationError.INVALID_CONFIGURATION,
+                    "Candidate configuration cannot be published",
+                    exception);
+        }
+    }
+
     private List<PublishedFlag> compileCandidate(
             UUID organizationId,
             UUID projectId) {
@@ -500,6 +542,41 @@ public class PublicationService {
         if (locked.size() != 1) {
             throw TenantAccessException.resourceNotFound();
         }
+    }
+
+    private PublicationState readPublicationState(Environment environment) {
+        String sql = """
+                SELECT publication.current_revision_id,
+                       publication.current_revision_number,
+                       publication.pointer_version,
+                       revision.checksum,
+                       publication.updated_at
+                FROM flagforge.environment_publication_state publication
+                JOIN flagforge.configuration_revisions revision
+                  ON revision.organization_id = publication.organization_id
+                 AND revision.project_id = publication.project_id
+                 AND revision.environment_id = publication.environment_id
+                 AND revision.id = publication.current_revision_id
+                 AND revision.revision_number = publication.current_revision_number
+                WHERE publication.organization_id = :organizationId
+                  AND publication.project_id = :projectId
+                  AND publication.environment_id = :environmentId
+                """;
+        return jdbcTemplate.query(
+                        sql,
+                        Map.of(
+                                "organizationId", environment.organizationId(),
+                                "projectId", environment.projectId(),
+                                "environmentId", environment.id()),
+                        (resultSet, rowNumber) -> new PublicationState(
+                                resultSet.getObject("current_revision_id", UUID.class),
+                                resultSet.getLong("current_revision_number"),
+                                resultSet.getLong("pointer_version"),
+                                resultSet.getString("checksum"),
+                                resultSet.getTimestamp("updated_at").toInstant()))
+                .stream()
+                .findFirst()
+                .orElseGet(PublicationState::unpublished);
     }
 
     private PublicationState currentPublicationState(Environment environment) {
@@ -977,6 +1054,26 @@ public class PublicationService {
 
         private static PublicationState unpublished() {
             return new PublicationState(null, 0, 0, null, null);
+        }
+    }
+
+    public record PreparedPublication(
+            UUID environmentId,
+            long revisionNumber,
+            long publicationVersion,
+            int snapshotSchemaVersion,
+            String algorithmVersion,
+            String checksum,
+            int payloadBytes,
+            byte[] payload) {
+
+        public PreparedPublication {
+            payload = Objects.requireNonNull(payload, "payload is required").clone();
+        }
+
+        @Override
+        public byte[] payload() {
+            return payload.clone();
         }
     }
 
