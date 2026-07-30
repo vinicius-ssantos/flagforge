@@ -25,6 +25,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -52,6 +53,9 @@ class ProtectedChangeRequestIntegrationTests
     private FeatureFlagService featureFlagService;
 
     @Autowired
+    private JdbcTemplate jdbcTemplate;
+
+    @Autowired
     private EnvironmentApprovalPolicyService policyService;
 
     @Autowired
@@ -67,6 +71,12 @@ class ProtectedChangeRequestIntegrationTests
         Fixture fixture = fixture("protected-happy");
         tenantHierarchyService.addMembership("reviewer", MembershipRole.ADMIN);
         policyService.update(fixture.environment().id(), true, true);
+
+        assertThatThrownBy(() -> changeRequestService.requireDirectPublicationAllowed(
+                fixture.environment().id()))
+                .isInstanceOf(ChangeRequestException.class)
+                .extracting(exception -> ((ChangeRequestException) exception).code())
+                .isEqualTo(ChangeRequestError.APPROVAL_REQUIRED);
 
         authenticate(fixture.organization().id(), "requester");
         var created = changeRequestService.create(
@@ -93,6 +103,50 @@ class ProtectedChangeRequestIntegrationTests
         assertThat(published.state()).isEqualTo(ChangeRequestState.PUBLISHED);
         assertThat(published.publishedRevisionNumber()).isEqualTo(1L);
         assertThat(published.candidateChecksum()).hasSize(64);
+        assertThat(jdbcTemplate.queryForObject(
+                """
+                SELECT checksum
+                FROM flagforge.configuration_revisions
+                WHERE id = ?
+                """,
+                String.class,
+                published.publishedRevisionId()))
+                .isEqualTo(created.candidateChecksum());
+        assertThat(auditActions(created.id())).containsExactly(
+                "CHANGE_REQUEST_CREATED",
+                "CHANGE_REQUEST_SUBMITTED",
+                "CHANGE_REQUEST_APPROVED",
+                "CHANGE_REQUEST_PUBLISHED");
+    }
+
+    @Test
+    void recordsRejectionAndAllowsANewRequest() {
+        Fixture fixture = fixture("protected-rejection");
+        tenantHierarchyService.addMembership("reviewer", MembershipRole.ADMIN);
+        policyService.update(fixture.environment().id(), true, true);
+
+        authenticate(fixture.organization().id(), "requester");
+        var request = changeRequestService.create(
+                fixture.environment().id(), 0, "Unsafe rollout", null);
+        changeRequestService.submit(fixture.environment().id(), request.id());
+
+        authenticate(fixture.organization().id(), "reviewer");
+        var rejected = changeRequestService.reject(
+                fixture.environment().id(),
+                request.id(),
+                "Missing release evidence");
+
+        assertThat(rejected.state()).isEqualTo(ChangeRequestState.REJECTED);
+        assertThat(rejected.decisionNote()).isEqualTo("Missing release evidence");
+        assertThat(auditActions(request.id())).containsExactly(
+                "CHANGE_REQUEST_CREATED",
+                "CHANGE_REQUEST_SUBMITTED",
+                "CHANGE_REQUEST_REJECTED");
+
+        authenticate(fixture.organization().id(), "requester");
+        assertThat(changeRequestService.create(
+                fixture.environment().id(), 0, "Corrected rollout", null).state())
+                .isEqualTo(ChangeRequestState.DRAFT);
     }
 
     @Test
@@ -165,6 +219,19 @@ class ProtectedChangeRequestIntegrationTests
         assertThatThrownBy(() -> changeRequestService.create(
                 fixture.environment().id(), 0, "Forbidden", null))
                 .isInstanceOf(RuntimeException.class);
+    }
+
+    private List<String> auditActions(UUID changeRequestId) {
+        return jdbcTemplate.queryForList(
+                """
+                SELECT action
+                FROM flagforge.audit_events
+                WHERE resource_type = 'CHANGE_REQUEST'
+                  AND resource_id = ?
+                ORDER BY occurred_at, id
+                """,
+                String.class,
+                changeRequestId);
     }
 
     private Fixture fixture(String prefix) {
