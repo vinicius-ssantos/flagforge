@@ -2,12 +2,10 @@ package io.github.viniciusssantos.flagforge.publishing;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.time.Instant;
-import java.util.HexFormat;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -20,6 +18,7 @@ import io.github.viniciusssantos.flagforge.audit.AuditTrailService;
 import io.github.viniciusssantos.flagforge.audit.AuditTrailService.AuditAction;
 import io.github.viniciusssantos.flagforge.audit.AuditTrailService.AuditCommand;
 import io.github.viniciusssantos.flagforge.audit.AuditTrailService.AuditResourceType;
+import io.github.viniciusssantos.flagforge.publishing.PublicationService.PreparedPublication;
 import io.github.viniciusssantos.flagforge.publishing.PublicationService.PublishedRevision;
 import io.github.viniciusssantos.flagforge.publishing.PublishedSnapshotCodec.PublishedFlag;
 import io.github.viniciusssantos.flagforge.publishing.PublishedSnapshotCodec.PublishedSnapshot;
@@ -303,7 +302,10 @@ public class ChangeRequestService {
         Map<String, String> before = baseline == null
                 ? Map.of()
                 : flatten(baseline.snapshot());
-        Map<String, String> after = parsePayload(candidatePayload);
+        PublishedSnapshot candidateSnapshot = snapshotCodec.decode(
+                candidatePayload,
+                request.candidateChecksum());
+        Map<String, String> after = flatten(candidateSnapshot);
         TreeSet<String> paths = new TreeSet<>();
         paths.addAll(before.keySet());
         paths.addAll(after.keySet());
@@ -364,45 +366,13 @@ public class ChangeRequestService {
     }
 
     private Candidate compileCandidate(Environment environment, long expectedVersion) {
-        Map<String, String> values = jdbcTemplate.query(
-                """
-                SELECT flag.flag_key, flag.value_type, flag.default_variant_key,
-                       variant.variant_key, variant.boolean_value, variant.string_value
-                FROM flagforge.feature_flags flag
-                JOIN flagforge.feature_flag_variants variant
-                  ON variant.organization_id = flag.organization_id
-                 AND variant.project_id = flag.project_id
-                 AND variant.flag_id = flag.id
-                WHERE flag.organization_id = :organizationId
-                  AND flag.project_id = :projectId
-                  AND flag.state = 'ACTIVE'
-                ORDER BY flag.flag_key, variant.variant_key
-                """,
-                parameters(environment),
-                rs -> {
-                    Map<String, String> result = new TreeMap<>();
-                    while (rs.next()) {
-                        String flag = "flags." + rs.getString("flag_key");
-                        String type = rs.getString("value_type");
-                        result.put(flag + ".type", type);
-                        result.put(flag + ".enabled", "true");
-                        result.put(flag + ".defaultVariant",
-                                rs.getString("default_variant_key"));
-                        Object booleanValue = rs.getObject("boolean_value");
-                        String value = booleanValue == null
-                                ? rs.getString("string_value")
-                                : booleanValue.toString();
-                        result.put(
-                                flag + ".variants." + rs.getString("variant_key"),
-                                type + ":" + value);
-                    }
-                    return result;
-                });
-        byte[] payload = serialize(values);
+        PreparedPublication prepared = publicationService.prepare(
+                environment.id(),
+                expectedVersion);
         return new Candidate(
-                expectedVersion + 1,
-                sha256(payload),
-                payload);
+                prepared.revisionNumber(),
+                prepared.checksum(),
+                prepared.payload());
     }
 
     private Baseline loadBaseline(Environment environment) {
@@ -452,59 +422,6 @@ public class ChangeRequestService {
             }
         }
         return values;
-    }
-
-    private static byte[] serialize(Map<String, String> values) {
-        StringBuilder canonical = new StringBuilder();
-        values.forEach((path, value) -> canonical
-                .append(path)
-                .append('=')
-                .append(escape(value))
-                .append('\n'));
-        if (canonical.isEmpty()) {
-            canonical.append('\n');
-        }
-        return canonical.toString().getBytes(StandardCharsets.UTF_8);
-    }
-
-    private static Map<String, String> parsePayload(byte[] payload) {
-        Map<String, String> values = new TreeMap<>();
-        String content = new String(payload, StandardCharsets.UTF_8);
-        for (String line : content.split("\\n")) {
-            int separator = line.indexOf('=');
-            if (separator > 0) {
-                values.put(
-                        line.substring(0, separator),
-                        unescape(line.substring(separator + 1)));
-            }
-        }
-        return values;
-    }
-
-    private static String escape(String value) {
-        return value.replace("\\", "\\\\")
-                .replace("\n", "\\n")
-                .replace("=", "\\=");
-    }
-
-    private static String unescape(String value) {
-        StringBuilder result = new StringBuilder();
-        boolean escaped = false;
-        for (int index = 0; index < value.length(); index++) {
-            char current = value.charAt(index);
-            if (escaped) {
-                result.append(current == 'n' ? '\n' : current);
-                escaped = false;
-            } else if (current == '\\') {
-                escaped = true;
-            } else {
-                result.append(current);
-            }
-        }
-        if (escaped) {
-            result.append('\\');
-        }
-        return result.toString();
     }
 
     private void requireExpectedVersion(Environment environment, long expectedVersion) {
@@ -662,15 +579,6 @@ public class ChangeRequestService {
                     "Text exceeds the maximum length");
         }
         return value.strip();
-    }
-
-    private static String sha256(byte[] payload) {
-        try {
-            return HexFormat.of().formatHex(
-                    MessageDigest.getInstance("SHA-256").digest(payload));
-        } catch (NoSuchAlgorithmException exception) {
-            throw new IllegalStateException("SHA-256 is unavailable", exception);
-        }
     }
 
     private static Instant instant(ResultSet rs, String column) throws SQLException {
