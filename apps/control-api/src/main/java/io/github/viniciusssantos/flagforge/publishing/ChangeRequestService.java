@@ -231,11 +231,12 @@ public class ChangeRequestService {
         verifyCandidate(environment, request);
         PublishedRevision revision = publicationService.publish(
                 environment.id(), request.expectedPublicationVersion());
-        if (!request.candidateChecksum().equals(compileCandidate(
-                environment, request.expectedPublicationVersion()).checksum())) {
+        if (!MessageDigest.isEqual(
+                request.candidateChecksum().getBytes(StandardCharsets.US_ASCII),
+                revision.checksum().getBytes(StandardCharsets.US_ASCII))) {
             throw new ChangeRequestException(
                     ChangeRequestError.CANDIDATE_CHANGED,
-                    "The approved candidate changed before publication");
+                    "The published revision differs from the approved candidate");
         }
         Instant now = Instant.now();
         int updated = jdbcTemplate.update(
