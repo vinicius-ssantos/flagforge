@@ -166,3 +166,179 @@ The Java implementation verifies:
 - a deterministic 100,000-subject distribution sample.
 
 Generated property sweeps use a fixed seed so failures are reproducible in local builds and CI.
+
+---
+
+<details>
+<summary><strong>🇧🇷 Português (pt-BR)</strong></summary>
+
+# Alocação determinística de rollout
+
+## Propósito
+
+O FlagForge atribui um bucket inteiro estável a um sujeito de segmentação dentro de um namespace de alocação de uma flag. O bucket é reutilizável entre processos de avaliação, revisões publicadas e SDKs de diferentes linguagens, desde que todas as implementações usem a mesma versão de algoritmo e as mesmas entradas.
+
+O algoritmo dá suporte a rollouts percentuais explicáveis. Ele não é um hash de senha, um verificador de credenciais, um mecanismo de anonimização nem uma fronteira de autorização.
+
+## Identidade da versão
+
+| Campo | Valor |
+| --- | --- |
+| ID do algoritmo | `flagforge-rollout-v1` |
+| Versão de fio (wire) | byte sem sinal `0x01` |
+| Hash | SHA-256 |
+| Codificação de texto | UTF-8 |
+| Normalização Unicode | NFC para a chave de segmentação |
+| Faixa de buckets | `0..99.999` |
+| Resolução percentual | `0,001%` |
+
+O ID do algoritmo precisa ser persistido em todo snapshot imutável que contenha uma alocação percentual. Ele também precisa ser retornado nos contratos detalhados de avaliação e diagnóstico quando o bucket for relevante.
+
+## Payload canônico do hash
+
+O payload começa com estes bytes:
+
+```text
+46 46 52 41 01
+ F  F  R  A  v1
+```
+
+Seis campos vêm em seguida, nesta ordem exata:
+
+1. ID da organização;
+2. ID do projeto;
+3. ID do ambiente;
+4. chave da flag;
+5. chave de alocação;
+6. chave de segmentação.
+
+Cada campo é codificado como:
+
+```text
+comprimento em bytes UTF-8, inteiro sem sinal big-endian de 4 bytes
+bytes UTF-8 do campo
+```
+
+Os prefixos de comprimento impedem que combinações ambíguas de delimitadores, como `ab|c` e `a|bc`, produzam o mesmo payload.
+
+### Normalização de campos
+
+- UUIDs usam a representação canônica em minúsculas com hifens produzida por `UUID.toString()`.
+- Chaves de flag e de alocação têm espaços removidos nas bordas, são convertidas para minúsculas com regras independentes de locale e precisam casar com `[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?`.
+- A chave de segmentação é normalizada para Unicode NFC.
+- Espaços em branco no início e no fim da chave de segmentação continuam significativos e não são removidos.
+- Uma chave de segmentação não pode ser vazia e é limitada a 1.024 bytes UTF-8.
+
+A chave de alocação é um namespace estável selecionado pela configuração compilada. Mantê-la inalterada preserva a coorte ao longo de mudanças percentuais e de revisões publicadas. Alterá-la intencionalmente reembaralha a coorte.
+
+## Cálculo do bucket
+
+1. Calcular SHA-256 sobre o payload canônico.
+2. Interpretar os quatro primeiros bytes do digest como um inteiro sem sinal de 32 bits big-endian `u`.
+3. Calcular:
+
+```text
+bucket = floor(u * 100000 / 4294967296)
+```
+
+A multiplicação precisa usar um tipo inteiro largo o bastante para evitar overflow. O resultado está sempre entre `0` e `99.999`.
+
+## Inclusão percentual
+
+Um percentual de rollout é representado por unidades inteiras:
+
+```text
+units = percent * 1000
+```
+
+O percentual precisa estar entre `0` e `100` e ter no máximo três casas decimais.
+
+Um sujeito é incluído quando:
+
+```text
+bucket < units
+```
+
+Exemplos:
+
+| Percentual | Buckets incluídos |
+| --- | --- |
+| `0%` | nenhum |
+| `0,001%` | `0` |
+| `20%` | `0..19.999` |
+| `20,001%` | `0..20.000` |
+| `99,999%` | `0..99.998` |
+| `100%` | `0..99.999` |
+
+Essa regra de limiar garante expansão monotônica. Aumentar um rollout de `20%` para `30%` não pode remover nenhum sujeito já incluído em `20%`, desde que a versão do algoritmo e os campos canônicos de entrada permaneçam inalterados.
+
+## Vetores de conformidade
+
+Os vetores legíveis por máquina estão armazenados em:
+
+```text
+apps/control-api/src/test/resources/conformance/rollout-v1.tsv
+```
+
+Os vetores incluem:
+
+- chaves de segmentação ASCII;
+- formas Unicode compostas e decompostas que normalizam para o mesmo payload NFC;
+- chaves de segmentação com CJK e emoji;
+- bucket `0`;
+- bucket `19.999`, o último sujeito incluído em `20%`;
+- bucket `20.000`, o primeiro sujeito excluído em `20%`;
+- bucket `99.999`.
+
+Todo avaliador de servidor e toda implementação de SDK precisa consumir esses vetores ou copiá-los sem modificação. Um digest, payload ou bucket diferente é uma falha de compatibilidade.
+
+## Amostra determinística de distribuição
+
+A suíte de testes aloca as chaves de segmentação `sample-0` até `sample-99999` em um namespace fixo. A V1 produz estas contagens por decil:
+
+| Faixa de buckets | Sujeitos |
+| --- | ---: |
+| `0..9.999` | 9.945 |
+| `10.000..19.999` | 9.948 |
+| `20.000..29.999` | 9.890 |
+| `30.000..39.999` | 10.027 |
+| `40.000..49.999` | 10.041 |
+| `50.000..59.999` | 10.123 |
+| `60.000..69.999` | 10.063 |
+| `70.000..79.999` | 9.882 |
+| `80.000..89.999` | 9.904 |
+| `90.000..99.999` | 10.177 |
+
+A mesma amostra inclui 19.893 sujeitos em `20%`. Esses números são evidência para esta amostra determinística, e não uma garantia estatística universal ou um SLO de produção.
+
+## Compatibilidade e migração
+
+O comportamento de `flagforge-rollout-v1` é imutável. Refatoração, otimização de desempenho ou uma nova implementação em outra linguagem precisam continuar satisfazendo todos os vetores de conformidade da V1.
+
+Uma mudança de algoritmo exige:
+
+1. um novo ID de algoritmo e uma nova versão de fio;
+2. um arquivo separado de vetores de conformidade;
+3. metadados explícitos no snapshot;
+4. ferramental de comparação que mostre as mudanças de coorte;
+5. uma estratégia de migração escolhida pelo operador.
+
+Snapshots publicados existentes permanecem fixados à versão registrada. Uma migração pode publicar uma nova revisão usando o novo algoritmo, mas o FlagForge nunca deve reinterpretar um snapshot V1 com comportamento V2. Quando preservar uma coorte existente importa mais do que adotar um novo algoritmo, o ambiente permanece na V1.
+
+## Estratégia de testes
+
+A implementação Java verifica:
+
+- vetores de conformidade byte a byte;
+- avaliação repetida determinística;
+- limites do bucket;
+- fronteiras exatas de limiar;
+- expansão monotônica de rollout;
+- equivalência Unicode NFC;
+- normalização de chaves independente de locale;
+- limites de tamanho da chave de segmentação;
+- uma amostra determinística de distribuição com 100.000 sujeitos.
+
+As varreduras de propriedades geradas usam uma semente fixa, para que falhas sejam reprodutíveis em builds locais e na CI.
+
+</details>

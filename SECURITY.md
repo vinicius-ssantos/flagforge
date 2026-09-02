@@ -41,3 +41,53 @@ The security model treats the following as distinct boundaries:
 
 A flag may control product exposure but must not grant access to protected data or privileged operations. Applications integrating FlagForge remain responsible for authentication and authorization.
 
+
+---
+
+<details>
+<summary><strong>🇧🇷 Português (pt-BR)</strong></summary>
+
+# Política de Segurança
+
+## Status do projeto
+
+O FlagForge está em desenvolvimento inicial e ainda não possui um release de produção suportado. Relatos de segurança continuam sendo bem-vindos porque isolamento entre tenants e configuração em tempo de execução são preocupações centrais.
+
+## Reportando uma vulnerabilidade
+
+Use o relato privado de vulnerabilidades do GitHub para este repositório quando disponível. Não crie uma issue pública contendo detalhes de exploração, credenciais, dados de tenants ou segredos de reprodução.
+
+Inclua:
+
+- Componente afetado e commit/versão.
+- Impacto e capacidades necessárias ao atacante.
+- Passos de reprodução ou uma prova de conceito mínima.
+- Mitigação sugerida, se conhecida.
+
+## Fronteiras de segurança
+
+O modelo de segurança trata os itens a seguir como fronteiras distintas:
+
+- Organização/tenant.
+- Acesso administrativo humano.
+- Credencial de SDK do lado do servidor.
+- Possível credencial futura do lado do cliente.
+- Ambientes de desenvolvimento, staging e produção.
+- Capacidades do Plano de Controle e do Plano de Avaliação.
+
+## Requisitos de baseline
+
+- A identidade do tenant é derivada de credenciais autenticadas.
+- Segredos são armazenados como hashes ou em um cofre externo, nunca em texto plano no banco de dados.
+- Chaves de SDK têm escopo de ambiente, são revogáveis, rotacionáveis e de menor privilégio.
+- Mudanças em produção são integralmente auditadas.
+- Logs, traces, métricas e erros não expõem credenciais nem dados sensíveis de segmentação.
+- Chaves de cache incluem a fronteira do tenant.
+- Testes negativos entre tenants acompanham as APIs públicas de recursos.
+- Varredura de dependências e de contêineres fará parte da CI assim que houver código executável.
+
+## Feature flags não são autorização
+
+Uma flag pode controlar a exposição do produto, mas não deve conceder acesso a dados protegidos ou operações privilegiadas. As aplicações que integram o FlagForge permanecem responsáveis por autenticação e autorização.
+
+</details>

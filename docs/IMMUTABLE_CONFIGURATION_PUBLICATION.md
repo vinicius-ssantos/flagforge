@@ -131,3 +131,145 @@ Automated tests verify:
 - PostgreSQL optimistic-concurrency conflicts and metadata;
 - evaluation API fixtures publish before runtime evaluation;
 - runtime evaluation uses the graph decoded from the immutable payload.
+
+---
+
+<details>
+<summary><strong>🇧🇷 Português (pt-BR)</strong></summary>
+
+# Publicação de configuração imutável
+
+O FlagForge separa o estado editável do Plano de Controle do estado de avaliação
+em tempo de execução. As linhas de feature flag e suas variantes são rascunhos até
+que uma publicação de ambiente crie com sucesso uma revisão imutável completa.
+
+## Invariante de runtime
+
+Um avaliador nunca monta configuração a partir de linhas mutáveis. Ele resolve o
+único ponteiro de revisão atual do ambiente autenticado, carrega o payload exato
+dessa revisão, verifica seu checksum e sua identidade, decodifica uma única vez e
+avalia contra esse documento completo.
+
+Não existe fallback de um snapshot publicado ausente ou inválido para as tabelas
+vivas de flags. Isso evita decisões com versões misturadas e faz da publicação a
+única fronteira que muda o comportamento em tempo de execução.
+
+## Fronteira transacional
+
+`PublicationService.publish(environmentId, expectedVersion)` executa o seguinte
+trabalho dentro de uma única transação PostgreSQL:
+
+1. Autorizar o acesso de escrita ao ambiente e travar o ambiente pertencente ao tenant.
+2. Alocar a próxima revisão do ambiente, monotonicamente crescente.
+3. Carregar e validar a configuração ativa completa do projeto.
+4. Produzir um snapshot canônico limitado e o checksum SHA-256.
+5. Inserir os metadados imutáveis da revisão.
+6. Inserir os bytes serializados exatos do snapshot.
+7. Acrescentar um evento de auditoria.
+8. Inserir um evento pendente no outbox transacional.
+9. Mover o ponteiro de revisão atual do ambiente.
+
+O ponteiro é escrito por último por clareza, mas a atomicidade do PostgreSQL é a
+garantia real de correção. Qualquer exceção reverte todas as escritas, deixando
+efetiva a revisão publicada anterior.
+
+## Identidade
+
+Uma configuração publicada é identificada por todos os campos a seguir:
+
+- ID da organização;
+- ID do projeto;
+- ID do ambiente;
+- ID da revisão e número de revisão monotonicamente crescente;
+- versão do schema do snapshot;
+- versão do algoritmo de avaliação;
+- checksum SHA-256 dos bytes exatos do payload.
+
+As chaves estrangeiras incluem tenant, projeto, ambiente, ID da revisão e número
+da revisão. Um ponteiro válido, portanto, não pode referenciar uma revisão de
+outro tenant ou ambiente.
+
+## Formato canônico do snapshot
+
+Os snapshots usam uma codificação binária determinística, em vez de serialização
+de objetos dependente do runtime. O formato de fio comum inclui:
+
+- o cabeçalho mágico `FFSNAP01`;
+- a versão do schema;
+- os UUIDs de tenant, projeto e ambiente;
+- o número da revisão;
+- a versão do algoritmo;
+- as feature flags ordenadas;
+- as variantes tipadas ordenadas e seus valores.
+
+A versão 1 do schema permanece legível e preserva seu vetor fixo de compatibilidade.
+A versão 2 do schema acrescenta o grafo canônico de segmentação ao mesmo payload,
+incluindo pré-requisitos, regras ordenadas, condições tipadas e segmentos
+reutilizáveis. A avaliação em tempo de execução consome esse grafo decodificado
+diretamente, em vez de reconstruí-lo a partir de tabelas mutáveis.
+
+O schema atual suporta valores de flag BOOLEAN e STRING. Chaves e strings usam
+limites explícitos de bytes UTF-8. As contagens são limitadas, bytes residuais são
+rejeitados e o payload completo não pode exceder 1 MiB.
+
+Os testes de compatibilidade fixam o comprimento em bytes e o checksum da versão 1
+e verificam um round-trip determinístico do grafo da versão 2. Mudanças acidentais
+de formato de fio, portanto, falham na verificação em vez de produzir silenciosamente
+dados incompatíveis em runtime.
+
+## Comportamento de rascunho
+
+Alterar, adicionar ou arquivar flags editáveis não altera um payload publicado
+existente. A avaliação em tempo de execução continua usando a revisão anterior até
+que a configuração candidata completa seja validada e uma nova transação seja
+confirmada.
+
+Um candidato inválido, tipo não suportado, variante padrão ausente, valor inválido,
+payload acima do limite, erro de banco de dados ou erro de serialização deixa o
+ponteiro atual inalterado.
+
+## Controles de imutabilidade
+
+O código da aplicação expõe casos de uso de criação e leitura de revisões publicadas,
+mas nenhum caso de uso de atualização ou exclusão. Além disso, triggers do PostgreSQL
+rejeitam operações de `UPDATE` e `DELETE` contra:
+
+- `configuration_revisions`;
+- `configuration_snapshots`;
+- `publication_audit_events`.
+
+O histórico publicado também evita exclusão em cascata a partir de recursos mutáveis
+do tenant. A linha do outbox é intencionalmente excluída do trigger de imutabilidade,
+porque seu status de entrega precisa avançar pelo ciclo de vida do relay.
+
+## Escopo do outbox
+
+A publicação insere um registro de outbox `CONFIGURATION_PUBLISHED` na mesma
+transação da revisão e do ponteiro. O relay, as retentativas, a deduplicação e o
+comportamento externo de cache/distribuição são entregues separadamente pela issue #18.
+Até lá, os eventos permanecem persistidos com segurança no status `PENDING`.
+
+## Escopo de concorrência
+
+A linha do ambiente é travada enquanto uma revisão é alocada e confirmada, e toda
+publicação fornece a última versão de publicação do ambiente observada. Uma
+atualização de ponteiro por compare-and-set exige que a versão armazenada coincida.
+Dois escritores usando a mesma versão esperada, portanto, produzem uma publicação
+bem-sucedida e um conflito explícito, sem um lock distribuído no Redis.
+
+## Cobertura de verificação
+
+Os testes automatizados verificam:
+
+- a persistência de revisão, snapshot, ponteiro, auditoria e outbox;
+- que edições de rascunho permanecem invisíveis antes de uma nova publicação;
+- que uma publicação falha deixa a revisão anterior efetiva;
+- que o histórico de revisões rejeita mutação e exclusão;
+- que viewers não podem publicar;
+- a rejeição de checksum adulterado e de schema não suportado;
+- a compatibilidade determinística do schema v1 e o round-trip do grafo do schema v2;
+- os conflitos de concorrência otimista do PostgreSQL e seus metadados;
+- que as fixtures da API de avaliação publicam antes da avaliação em runtime;
+- que a avaliação em runtime usa o grafo decodificado do payload imutável.
+
+</details>

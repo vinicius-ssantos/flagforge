@@ -193,3 +193,205 @@ Feature flags are not:
 
 Each release flag should have an owner and expected removal date to control flag debt.
 
+
+---
+
+<details>
+<summary><strong>🇧🇷 Português (pt-BR)</strong></summary>
+
+# Modelo de Domínio e Semântica de Avaliação
+
+## Hierarquia de tenants
+
+```mermaid
+flowchart TD
+    Org["Organização"] --> Member["Associação"]
+    Org --> Project["Projeto"]
+    Project --> Env["Ambiente"]
+    Env --> Flag["Feature Flag"]
+    Env --> Segment["Segmento"]
+    Flag --> Revision["Revisão Publicada"]
+```
+
+## Conceitos principais
+
+### Organização
+
+A fronteira do tenant. Possui projetos, membros, papéis, cotas e histórico de auditoria. Os slugs de organização são fronteiras públicas estáveis e globalmente únicas; as chaves filhas pertencentes ao tenant são únicas apenas dentro do escopo documentado de sua organização ou projeto.
+
+### Associação (Membership)
+
+Vincula o identificador de um ator autenticado a uma organização. Associações têm estado ACTIVE ou SUSPENDED e um papel explícito:
+
+- OWNER tem todas as permissões do Plano de Controle, incluindo mudanças de titularidade da organização. Toda organização deve manter ao menos um OWNER ACTIVE.
+- ADMIN gerencia associações, projetos, ambientes e credenciais de SDK, mas não pode conceder nem alterar autoridade de OWNER.
+- DEVELOPER lê metadados de organização e associação e pode escrever projetos e ambientes.
+- VIEWER tem acesso somente leitura a metadados de organização, associação, projeto, ambiente e credenciais.
+
+A autorização é verificada antes da busca do recurso. Isso impede que falhas de permissão se tornem um canal de enumeração de recursos.
+
+Uma organização é inicializada junto com uma associação fundadora OWNER em uma única transação PostgreSQL. As operações normais de tenant não aceitam identificador de organização fornecido pelo chamador; a organização é derivada do principal autenticado e verificada contra uma associação ativa.
+
+### Projeto
+
+Um produto de software ou contexto de aplicação delimitado. As chaves de flag são únicas dentro de um projeto, de modo que a mesma chave lógica pode existir com segurança em outro projeto.
+
+### Ambiente
+
+Um espaço de configuração isolado, como development, staging, production, `qa-blue` ou qualquer outra chave válida local ao projeto. Os nomes familiares development, staging e production são apenas exemplos e nunca são semeados automaticamente nem fixados no código. Credenciais e proteção de publicação têm escopo de ambiente.
+
+O banco de dados armazena o identificador da organização em todo ambiente e impõe uma chave estrangeira composta para `(organization_id, project_id)`, impedindo que um ambiente referencie o projeto de outro tenant.
+
+### Credencial de SDK
+
+Uma credencial de máquina com escopo de ambiente que autoriza apenas avaliação. Seu formato em texto plano contém um identificador público de consulta e um segredo aleatório criptográfico de 256 bits. O texto plano só é retornado quando a credencial é criada ou rotacionada; o PostgreSQL armazena apenas o hash SHA-256 do segredo aleatório mais metadados não sensíveis.
+
+As credenciais podem ser listadas por metadados, rotacionadas e revogadas. A rotação cria uma nova credencial vinculada à sua antecessora e revoga a antecessora em uma única transação. A autenticação valida organização, ambiente, escopo EVALUATE, status ACTIVE e o segredo usando comparação em tempo constante. Credenciais inválidas, revogadas, desconhecidas, de outro ambiente e de outro tenant compartilham o mesmo contrato genérico de falha.
+
+### Feature Flag
+
+Uma chave estável e metadados que descrevem uma decisão em tempo de execução. Uma flag tem tipo de valor, estado de ciclo de vida, propriedade, variantes, regras, comportamento padrão e pré-requisitos opcionais.
+
+Os primeiros tipos executáveis são:
+
+- BOOLEAN, com variantes booleanas nomeadas, como `disabled=false` e `enabled=true`.
+- STRING, com variantes nomeadas, como `control=classic` e `compact=compact-v2`.
+
+NUMBER e JSON permanecem reservados no schema e no enum para que seus contratos de armazenamento sejam explícitos, mas a criação é rejeitada com um código estável `UNSUPPORTED_VALUE_TYPE` até que a normalização numérica e a validação limitada de JSON estejam plenamente implementadas. Valores nunca são coagidos silenciosamente entre tipos.
+
+### Variante
+
+Um valor tipado e nomeado, como `disabled`, `enabled`, `control`, `checkout-a` ou `checkout-b`. Toda variante tem exatamente o mesmo tipo de valor imutável de sua flag. As chaves de variante são únicas por flag, e o padrão declarado deve referenciar uma variante existente. Variantes nomeadas tornam compreensíveis as métricas de avaliação e de exposição.
+
+### Segmento
+
+Um conjunto reutilizável de regras de inclusão, exclusão ou atributo. Na primeira versão, os segmentos são locais ao ambiente, para evitar comportamento ambíguo entre ambientes.
+
+### Regra
+
+Um conjunto ordenado de condições com um desfecho. Inicialmente, as condições dentro de uma regra são combinadas com `AND`. Múltiplas regras são avaliadas por prioridade ascendente; a primeira regra que casar vence.
+
+### Revisão
+
+Uma versão de configuração publicada e imutável. O rollback produz uma nova revisão baseada em uma anterior.
+
+### Contexto de Avaliação
+
+Contém uma chave de segmentação estável e atributos tipados opcionais. Os dados de contexto são fornecidos para a avaliação e não são persistidos automaticamente como perfil de usuário.
+
+## Ciclo de vida da flag
+
+```mermaid
+stateDiagram-v2
+    [*] --> Rascunho
+    Rascunho --> EmRevisao
+    EmRevisao --> Rascunho: Mudanças solicitadas
+    EmRevisao --> Aprovado
+    Aprovado --> Publicado
+    Publicado --> Arquivado
+    Publicado --> Rascunho: Nova revisão
+```
+
+A aprovação é opcional em ambientes não protegidos e controlada por política em produção.
+
+A identidade estável da flag tem um ciclo de vida menor, anterior à existência de revisões publicadas:
+
+- Flags ACTIVE podem ser resolvidas para avaliação e edição.
+- Flags ARCHIVED permanecem legíveis para histórico, mas não podem ser resolvidas como ativas.
+- Um projeto não pode reutilizar uma chave arquivada, especialmente com um tipo incompatível.
+- Flags RELEASE e EXPERIMENT exigem uma data prevista de remoção; flags OPERATIONAL e KILL_SWITCH podem ser permanentes.
+
+## Algoritmo de avaliação
+
+Para uma flag e um contexto requisitados:
+
+1. Resolver o snapshot publicado completo.
+2. Encontrar a flag pela chave estável.
+3. Validar o estado e o tipo da flag.
+4. Avaliar os pré-requisitos em ordem topológica.
+5. Aplicar exclusões e inclusões explícitas de sujeitos.
+6. Avaliar as regras de segmentação ordenadas.
+7. Se a regra que casou contiver uma alocação percentual, calcular o bucket determinístico.
+8. Retornar a variante selecionada ou a variante padrão.
+9. Incluir a razão da avaliação, o identificador da regra, a versão do snapshot e os metadados de erro.
+
+## Alocação percentual
+
+A entrada da alocação é, conceitualmente:
+
+```text
+algorithmVersion + organizationId + projectId + environmentId + flagKey + targetingKey
+```
+
+Um hash estável é mapeado em uma faixa fixa de buckets. O algoritmo exato de hash e normalização precisa ser especificado, versionado e coberto por vetores de teste fixos, para que todo SDK retorne o mesmo resultado.
+
+Propriedades exigidas:
+
+- Determinístico entre processos e linguagens de programação.
+- Uniforme o suficiente para alocação de rollout.
+- Estável para a mesma versão do algoritmo.
+- Monotônico para aumentos simples de rollout: sujeitos incluídos em 20% permanecem incluídos em 30%.
+
+## Razões de avaliação
+
+Taxonomia inicial de razões:
+
+| Razão | Significado |
+|---|---|
+| `TARGETING_MATCH` | Uma regra ordenada casou |
+| `SPLIT` | Uma alocação percentual selecionou a variante |
+| `DEFAULT` | Nenhuma regra casou |
+| `DISABLED` | A flag está administrativamente desabilitada |
+| `PREREQUISITE_FAILED` | Uma flag obrigatória não casou |
+| `STALE` | Foi usado um snapshot de último estado bom conhecido |
+| `ERROR` | A avaliação falhou e retornou um fallback declarado |
+
+## Invariantes
+
+### Tenant e identidade
+
+- Todo agregado pertencente a um tenant pertence a exatamente uma organização.
+- A busca de recursos inclui a fronteira da organização autenticada.
+- Recursos ausentes e recursos pertencentes a outra organização produzem o mesmo contrato genérico de "não encontrado".
+- Um principal que reivindica uma organização sem associação ACTIVE é rejeitado antes do acesso ao recurso.
+- Credenciais de ambiente não podem administrar recursos do Plano de Controle.
+- O texto plano da credencial de SDK nunca é persistido e é retornado apenas na criação ou na rotação.
+- Credenciais de SDK autorizam apenas sua própria organização e ambiente.
+- Credenciais revogadas deixam de autorizar novas requisições.
+- Credenciais ausentes, inválidas, revogadas e com escopo incorreto falham com o mesmo contrato genérico de autenticação.
+
+### Publicação
+
+- Uma revisão é imutável após a publicação.
+- A publicação é atômica dentro do PostgreSQL.
+- Quem publica fornece uma versão esperada.
+- Exatamente uma versão publicada atual é referenciada por ambiente.
+- Grafos inválidos de pré-requisitos não podem ser publicados.
+
+### Avaliação
+
+- Uma resposta vem de uma única versão completa de snapshot.
+- Incompatibilidade de tipo nunca coage um valor silenciosamente.
+- Chaves estáveis de flag são únicas dentro de um projeto e não podem mudar de tipo de valor.
+- Flags arquivadas preservam metadados e variantes ao deixar o caminho de busca ativo.
+- A avaliação termina mesmo quando uma entrada de dependência malformada é encontrada.
+- Entradas normalizadas iguais e a mesma configuração produzem saídas iguais.
+
+### Auditoria
+
+- Registros de auditoria de segurança e de publicação são somente-acréscimo através da aplicação.
+- Cada registro identifica ator, tenant, ação, recurso, timestamp e identificador de correlação.
+- Segredos e contextos sensíveis completos de avaliação não são armazenados no log de auditoria.
+
+## Não equivalências explícitas
+
+Feature flags não são:
+
+- Autorização ou entitlements.
+- Substituto para migrações de banco de dados.
+- Regras de negócio permanentes.
+- Garantia de que caminhos de código antigos podem permanecer indefinidamente.
+
+Toda flag de release deve ter um dono e uma data prevista de remoção para controlar a dívida de flags.
+
+</details>

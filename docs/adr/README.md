@@ -22,3 +22,34 @@ New records should include:
 - Alternatives considered.
 - Conditions that would justify revisiting the decision.
 
+
+---
+
+<details>
+<summary><strong>🇧🇷 Português (pt-BR)</strong></summary>
+
+# Architecture Decision Records
+
+Os ADRs registram decisões que afetam materialmente arquitetura, segurança, propriedade dos dados ou comportamento operacional.
+
+| ADR | Decisão | Status |
+|---|---|---|
+| [0001](0001-modular-monolith-first.md) | Começar como monólito modular | Aceito |
+| [0002](0002-logical-control-and-evaluation-planes.md) | Separar logicamente os planos de Controle e de Avaliação | Aceito |
+| [0003](0003-immutable-versioned-snapshots.md) | Avaliar snapshots versionados imutáveis | Aceito |
+| [0004](0004-row-based-multitenancy.md) | Usar isolamento de tenant por linha inicialmente | Aceito |
+| [0005](0005-postgresql-source-of-truth-and-layered-cache.md) | Manter o PostgreSQL autoritativo e usar caches em camadas | Aceito |
+| [0006](0006-spring-data-jdbc-for-aggregate-persistence.md) | Usar Spring Data JDBC para persistência de agregados | Aceito |
+
+## Modelo de ADR
+
+Novos registros devem incluir:
+
+- Status e data.
+- Contexto e forças em jogo.
+- Decisão.
+- Consequências, incluindo as negativas.
+- Alternativas consideradas.
+- Condições que justificariam revisitar a decisão.
+
+</details>

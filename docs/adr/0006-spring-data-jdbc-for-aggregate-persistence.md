@@ -79,3 +79,92 @@ Reconsider this decision if executable evidence shows that:
 - aggregate updates cannot be modeled safely without excessive manual SQL;
 - complex read queries dominate development and would materially benefit from generated type-safe SQL;
 - a measured use case demonstrates that JPA's unit-of-work model is a better fit without weakening module or tenant boundaries.
+
+---
+
+<details>
+<summary><strong>🇧🇷 Português (pt-BR)</strong></summary>
+
+# ADR 0006: Usar Spring Data JDBC para persistência de agregados
+
+- Status: Aceito
+- Data: 2026-07-15
+
+## Contexto
+
+O FlagForge persiste no PostgreSQL agregados com escopo de tenant, revisões publicadas imutáveis, snapshots de avaliação compilados, registros de auditoria, estado de rollout e entradas de outbox transacional.
+
+A abordagem de persistência precisa preservar fronteiras explícitas de agregado e o comportamento transacional. O projeto também precisa de controle direto sobre SQL sensível a concorrência, registros somente-acréscimo, leituras em massa de snapshots e consultas operacionais. A escolha inicial é entre Spring Data JDBC e Spring Data JPA com Hibernate.
+
+## Decisão
+
+Usar Spring Data JDBC como tecnologia padrão de repositório para persistência de agregados.
+
+- Definir um repositório por raiz de agregado, em vez de repositórios para cada tabela.
+- Manter referências entre agregados como identificadores ou contratos deliberados em nível de aplicação.
+- Usar o Flyway como único mecanismo de criação e migração de schema.
+- Usar `JdbcClient`, `JdbcTemplate` ou implementações customizadas de repositório quando uma consulta, lock, operação em massa, carga de snapshot, reivindicação de outbox ou projeção ficar mais clara como SQL explícito.
+- Não introduzir entidades JPA, geração de schema pelo Hibernate, proxies de lazy loading ou Open Session in View.
+- Manter as fronteiras transacionais nos serviços de aplicação e tornar a concorrência otimista explícita no modelo do banco de dados.
+
+## Fundamentação
+
+O Spring Data JDBC está alinhado ao modelo de domínio orientado a agregados do projeto e mantém o comportamento de persistência visível. Ele evita lazy loading implícito, efeitos colaterais de contexto de persistência e travessia acidental de grafo entre fronteiras de módulo ou de tenant.
+
+A escolha também se encaixa nos caminhos de banco de dados mais importantes do FlagForge:
+
+- inserção de revisões e snapshots imutáveis;
+- atualizações explícitas de publicação por compare-and-set;
+- escritas somente-acréscimo de auditoria e outbox;
+- carga determinística de uma versão completa de snapshot;
+- constraints específicas do PostgreSQL e testes de concorrência.
+
+## Consequências
+
+### Positivas
+
+- A propriedade dos agregados e as fronteiras dos repositórios permanecem explícitas.
+- O SQL e o comportamento transacional ficam mais fáceis de inspecionar em análises de concorrência e de falha.
+- Os objetos de domínio não exigem proxies JPA nem relacionamentos bidirecionais.
+- Recursos específicos do PostgreSQL podem ser introduzidos deliberadamente atrás de contratos de repositório.
+- A persistência permanece compatível com as fronteiras do monólito modular.
+
+### Negativas
+
+- Modelos de leitura complexos podem exigir SQL e código de mapeamento explícitos.
+- O Spring Data JDBC trata entidades alcançáveis a partir de uma raiz de agregado como parte desse agregado e pode excluir e recriar linhas filhas durante atualizações do agregado.
+- Coleções mutáveis grandes não devem ser persistidas por substituição ingênua do agregado.
+- Não há verificação automática de alterações (dirty checking) nem carga preguiçosa de relacionamentos.
+
+## Guardrails
+
+- Manter os agregados pequenos o bastante para serem atualizados atomicamente.
+- Persistir snapshots imutáveis grandes por componentes dedicados de inserção/carga, e não por um save de agregado mutável grande.
+- Usar projeções para consultas de console e operacionais com carga de leitura alta.
+- Adicionar constraints de banco de dados para todo invariante que possa ser imposto relacionalmente.
+- Testar migrações, escopo de tenant, concorrência otimista e rollback de transação contra o PostgreSQL com Testcontainers.
+
+## Alternativas consideradas
+
+### Spring Data JPA e Hibernate
+
+Rejeitada como padrão porque seu contexto de persistência, relacionamentos preguiçosos e mapeamento orientado a grafo podem obscurecer o acesso ao banco e as fronteiras dos agregados. JPA continua viável para aplicações dominadas por grafos relacionais navegáveis, mas essa não é a carga de trabalho principal do FlagForge.
+
+### Apenas Spring JDBC puro
+
+Rejeitada como abordagem única porque o Spring Data JDBC fornece convenções úteis de repositório e de agregado, permitindo ainda assim SQL explícito onde necessário.
+
+### jOOQ
+
+Adiada. Pode ser reconsiderada se o projeto desenvolver um conjunto grande de projeções SQL type-safe complexas cujo valor supere materialmente o do Spring Data JDBC somado ao `JdbcClient`.
+
+## Revisitar quando
+
+Reconsiderar esta decisão se houver evidência executável de que:
+
+- a maior parte do código de persistência vira boilerplate de mapeamento customizado;
+- atualizações de agregado não podem ser modeladas com segurança sem SQL manual excessivo;
+- consultas de leitura complexas dominam o desenvolvimento e se beneficiariam materialmente de SQL type-safe gerado;
+- um caso de uso medido demonstra que o modelo de unidade de trabalho do JPA se encaixa melhor, sem enfraquecer as fronteiras de módulo ou de tenant.
+
+</details>
