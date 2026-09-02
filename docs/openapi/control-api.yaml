@@ -168,6 +168,276 @@ paths:
           $ref: '#/components/responses/AccessDenied'
         '404':
           $ref: '#/components/responses/ResourceNotFound'
+  /api/v1/memberships:
+    post:
+      operationId: addMembership
+      summary: Add a member to the caller's organization
+      description: |
+        The organization comes from the authenticated request, never from the body. Granting OWNER
+        requires ORGANIZATION_MANAGE; every other role requires MEMBERSHIP_MANAGE.
+      security:
+        - operatorToken: []
+      parameters:
+        - $ref: '#/components/parameters/OrganizationHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MembershipRequest'
+      responses:
+        '201':
+          description: Membership created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Membership'
+        '400':
+          $ref: '#/components/responses/InvalidTenantRequest'
+        '401':
+          $ref: '#/components/responses/AuthenticationRequired'
+        '403':
+          $ref: '#/components/responses/AccessDenied'
+  /api/v1/memberships/role:
+    put:
+      operationId: changeMembershipRole
+      summary: Change a member's role
+      security:
+        - operatorToken: []
+      parameters:
+        - $ref: '#/components/parameters/OrganizationHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MembershipRequest'
+      responses:
+        '200':
+          description: Membership updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Membership'
+        '401':
+          $ref: '#/components/responses/AuthenticationRequired'
+        '403':
+          $ref: '#/components/responses/AccessDenied'
+        '409':
+          description: The change would leave the organization without an active OWNER.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+  /api/v1/projects/{projectId}/flags:
+    post:
+      operationId: createFeatureFlag
+      summary: Create a typed feature flag with its variants
+      description: |
+        The declared `valueType` decides which variant field is read, so a value is never coerced
+        between types. Only BOOLEAN and STRING are supported; NUMBER and JSON are reserved and
+        rejected with `UNSUPPORTED_VALUE_TYPE`.
+      security:
+        - operatorToken: []
+      parameters:
+        - $ref: '#/components/parameters/OrganizationHeader'
+        - $ref: '#/components/parameters/ProjectId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateFlagRequest'
+            examples:
+              booleanFlag:
+                value:
+                  key: checkout-v2
+                  displayName: Checkout v2
+                  ownerId: squad-checkout
+                  valueType: BOOLEAN
+                  lifecycleType: OPERATIONAL
+                  defaultVariantKey: enabled
+                  variants:
+                    - key: disabled
+                      booleanValue: false
+                    - key: enabled
+                      booleanValue: true
+      responses:
+        '201':
+          description: Flag created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FeatureFlag'
+        '400':
+          $ref: '#/components/responses/InvalidFlagRequest'
+        '401':
+          $ref: '#/components/responses/AuthenticationRequired'
+        '403':
+          $ref: '#/components/responses/AccessDenied'
+        '404':
+          $ref: '#/components/responses/ResourceNotFound'
+        '409':
+          description: A flag with that key already exists in the project.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+  /api/v1/projects/{projectId}/flags/{flagId}:
+    get:
+      operationId: getFeatureFlag
+      summary: Read one feature flag
+      security:
+        - operatorToken: []
+      parameters:
+        - $ref: '#/components/parameters/OrganizationHeader'
+        - $ref: '#/components/parameters/ProjectId'
+        - $ref: '#/components/parameters/FlagId'
+      responses:
+        '200':
+          description: Feature flag
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FeatureFlag'
+        '401':
+          $ref: '#/components/responses/AuthenticationRequired'
+        '403':
+          $ref: '#/components/responses/AccessDenied'
+        '404':
+          $ref: '#/components/responses/ResourceNotFound'
+    delete:
+      operationId: archiveFeatureFlag
+      summary: Archive a feature flag
+      description: |
+        Archiving preserves metadata and variants for history and removes the flag from the active
+        lookup path. The key cannot be reused afterwards.
+      security:
+        - operatorToken: []
+      parameters:
+        - $ref: '#/components/parameters/OrganizationHeader'
+        - $ref: '#/components/parameters/ProjectId'
+        - $ref: '#/components/parameters/FlagId'
+      responses:
+        '200':
+          description: Flag archived
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FeatureFlag'
+        '401':
+          $ref: '#/components/responses/AuthenticationRequired'
+        '403':
+          $ref: '#/components/responses/AccessDenied'
+        '404':
+          $ref: '#/components/responses/ResourceNotFound'
+  /api/v1/environments/{environmentId}/sdk-credentials:
+    post:
+      operationId: createSdkCredential
+      summary: Issue an environment-scoped SDK credential
+      description: |
+        The plaintext is returned here and never again; only a hash is stored. A caller that loses
+        it must rotate rather than read it back.
+      security:
+        - operatorToken: []
+      parameters:
+        - $ref: '#/components/parameters/OrganizationHeader'
+        - $ref: '#/components/parameters/EnvironmentId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCredentialRequest'
+      responses:
+        '201':
+          description: Credential issued
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IssuedCredential'
+        '401':
+          $ref: '#/components/responses/AuthenticationRequired'
+        '403':
+          $ref: '#/components/responses/AccessDenied'
+        '404':
+          $ref: '#/components/responses/ResourceNotFound'
+    get:
+      operationId: listSdkCredentials
+      summary: List credential metadata for an environment
+      description: Metadata only. The secret is never returned by this operation.
+      security:
+        - operatorToken: []
+      parameters:
+        - $ref: '#/components/parameters/OrganizationHeader'
+        - $ref: '#/components/parameters/EnvironmentId'
+      responses:
+        '200':
+          description: Credential metadata
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/CredentialMetadata'
+        '401':
+          $ref: '#/components/responses/AuthenticationRequired'
+        '403':
+          $ref: '#/components/responses/AccessDenied'
+        '404':
+          $ref: '#/components/responses/ResourceNotFound'
+  /api/v1/sdk-credentials/{credentialId}/rotation:
+    post:
+      operationId: rotateSdkCredential
+      summary: Rotate a credential
+      description: |
+        Creates a replacement linked to its predecessor and revokes the predecessor in one
+        transaction, so the two never authorize at the same time.
+      security:
+        - operatorToken: []
+      parameters:
+        - $ref: '#/components/parameters/OrganizationHeader'
+        - $ref: '#/components/parameters/CredentialId'
+      responses:
+        '200':
+          description: Credential rotated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IssuedCredential'
+        '401':
+          $ref: '#/components/responses/AuthenticationRequired'
+        '403':
+          $ref: '#/components/responses/AccessDenied'
+        '404':
+          $ref: '#/components/responses/ResourceNotFound'
+        '409':
+          $ref: '#/components/responses/CredentialStateConflict'
+  /api/v1/sdk-credentials/{credentialId}/revocation:
+    post:
+      operationId: revokeSdkCredential
+      summary: Revoke a credential
+      description: Revocation takes effect immediately for subsequent evaluation requests.
+      security:
+        - operatorToken: []
+      parameters:
+        - $ref: '#/components/parameters/OrganizationHeader'
+        - $ref: '#/components/parameters/CredentialId'
+      responses:
+        '200':
+          description: Credential revoked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CredentialMetadata'
+        '401':
+          $ref: '#/components/responses/AuthenticationRequired'
+        '403':
+          $ref: '#/components/responses/AccessDenied'
+        '404':
+          $ref: '#/components/responses/ResourceNotFound'
+        '409':
+          $ref: '#/components/responses/CredentialStateConflict'
 components:
   securitySchemes:
     operatorToken:
@@ -189,6 +459,27 @@ components:
         pattern: '^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$'
     ProjectId:
       name: projectId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    FlagId:
+      name: flagId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    EnvironmentId:
+      name: environmentId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    CredentialId:
+      name: credentialId
       in: path
       required: true
       schema:
@@ -219,6 +510,21 @@ components:
             $ref: '#/components/schemas/ProblemDetail'
     InvalidTenantRequest:
       description: The request body is malformed, or a slug or key is already taken.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetail'
+    InvalidFlagRequest:
+      description: |
+        The flag request is malformed. `errorCode` carries the domain validation code, such as
+        `INVALID_TEXT` for a missing required field, `TYPE_MISMATCH` for a variant whose value
+        contradicts the declared type, or `UNSUPPORTED_VALUE_TYPE` for a reserved type.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetail'
+    CredentialStateConflict:
+      description: The credential is revoked, or changed concurrently.
       content:
         application/problem+json:
           schema:
@@ -299,6 +605,164 @@ components:
         createdAt:
           type: string
           format: date-time
+    MembershipRequest:
+      type: object
+      required: [actorId]
+      properties:
+        actorId:
+          type: string
+          maxLength: 128
+        role:
+          type: string
+          enum: [OWNER, ADMIN, DEVELOPER, VIEWER]
+          description: Defaults to VIEWER when omitted on creation; required when changing a role.
+    Membership:
+      type: object
+      required: [id, actorId, role, status, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        actorId:
+          type: string
+        role:
+          type: string
+          enum: [OWNER, ADMIN, DEVELOPER, VIEWER]
+        status:
+          type: string
+          enum: [ACTIVE, SUSPENDED]
+        createdAt:
+          type: string
+          format: date-time
+    CreateFlagRequest:
+      type: object
+      required: [key, displayName, ownerId, valueType, lifecycleType, defaultVariantKey, variants]
+      properties:
+        key:
+          type: string
+          pattern: '^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$'
+        displayName:
+          type: string
+          maxLength: 120
+        description:
+          type: string
+          maxLength: 500
+        ownerId:
+          type: string
+          maxLength: 128
+        valueType:
+          type: string
+          enum: [BOOLEAN, STRING, NUMBER, JSON]
+          description: NUMBER and JSON are reserved and rejected until fully implemented.
+        lifecycleType:
+          type: string
+          enum: [RELEASE, EXPERIMENT, OPERATIONAL, KILL_SWITCH]
+        expectedRemovalDate:
+          type: string
+          format: date
+          description: Required for RELEASE and EXPERIMENT flags.
+        defaultVariantKey:
+          type: string
+        variants:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/VariantRequest'
+    VariantRequest:
+      type: object
+      required: [key]
+      description: |
+        Exactly one value field is read, chosen by the flag's declared valueType — booleanValue for
+        BOOLEAN, stringValue for STRING. Supplying the wrong one is a TYPE_MISMATCH.
+      properties:
+        key:
+          type: string
+        booleanValue:
+          type: boolean
+        stringValue:
+          type: string
+    FeatureFlag:
+      type: object
+      required: [id, projectId, key, displayName, valueType, lifecycleType, defaultVariantKey, state, variants]
+      properties:
+        id:
+          type: string
+          format: uuid
+        projectId:
+          type: string
+          format: uuid
+        key:
+          type: string
+        displayName:
+          type: string
+        valueType:
+          type: string
+          enum: [BOOLEAN, STRING, NUMBER, JSON]
+        lifecycleType:
+          type: string
+          enum: [RELEASE, EXPERIMENT, OPERATIONAL, KILL_SWITCH]
+        defaultVariantKey:
+          type: string
+        state:
+          type: string
+          enum: [ACTIVE, ARCHIVED]
+        variants:
+          type: array
+          items:
+            type: object
+            properties:
+              key:
+                type: string
+              valueType:
+                type: string
+              value: {}
+    CreateCredentialRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+    CredentialMetadata:
+      type: object
+      required: [id, environmentId, name, keyPrefix, scope, status, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        environmentId:
+          type: string
+          format: uuid
+        name:
+          type: string
+        keyPrefix:
+          type: string
+          description: Public lookup identifier. Not secret, and not sufficient to authenticate.
+        scope:
+          type: string
+          enum: [EVALUATE]
+        status:
+          type: string
+          enum: [ACTIVE, REVOKED]
+        rotatedFromId:
+          type: string
+          format: uuid
+        createdAt:
+          type: string
+          format: date-time
+        revokedAt:
+          type: string
+          format: date-time
+    IssuedCredential:
+      type: object
+      required: [credential, plaintext]
+      properties:
+        credential:
+          $ref: '#/components/schemas/CredentialMetadata'
+        plaintext:
+          type: string
+          description: |
+            Returned only here, on creation and rotation. Only a SHA-256 hash of the random secret
+            is stored, so this value cannot be recovered later.
     ProblemDetail:
       type: object
       description: RFC 9457 problem details.
