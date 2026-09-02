@@ -103,7 +103,9 @@ Responses include defensive browser headers even though the current service is a
 
 The application now defines tenant memberships, Control Plane roles, explicit permissions, environment-scoped SDK credential lifecycle semantics, and protected-environment change requests with approval and self-approval prevention.
 
-It does not yet integrate an external human identity provider, expose production HTTP authentication endpoints, or implement rate limiting. It also exposes no HTTP endpoints for creating organizations, projects, environments, flags, or SDK credentials. Control-plane routes therefore require an authenticated principal that no configured login path can currently produce, and the local `UserDetailsService` rejects every lookup. The current default-deny posture prevents placeholder or future routes from becoming anonymously accessible while those boundaries remain under development.
+Human operators authenticate through an external OIDC issuer, and the organization a request acts in is selected per request and accepted only against an ACTIVE membership (ADR 0007). Organizations, projects, and environments are reachable over HTTP.
+
+It does not yet implement rate limiting, and exposes no HTTP endpoints for creating feature flags or SDK credentials, so those resources still originate in the service layer. Operator revocation follows the issuer's token lifetime rather than taking effect immediately. When no OIDC issuer is configured, no token decoder exists and the control plane stays closed, which keeps an unconfigured deployment default-denied rather than default-open.
 
 Any change that introduces a new external dependency, credential type, public endpoint, tenant lookup, telemetry exporter, or request-body logging must update this threat model in the same pull request.
 
@@ -217,7 +219,9 @@ As respostas incluem cabeçalhos defensivos de navegador, mesmo o serviço atual
 
 A aplicação agora define associações de tenant, papéis do Plano de Controle, permissões explícitas, a semântica de ciclo de vida das credenciais de SDK com escopo de ambiente e as solicitações de mudança em ambiente protegido, com aprovação e prevenção de autoaprovação.
 
-Ela ainda não integra um provedor externo de identidade humana, não expõe endpoints HTTP de autenticação de produção nem implementa limitação de taxa. Também não expõe endpoints HTTP para criar organizações, projetos, ambientes, flags ou credenciais de SDK. As rotas do plano de controle, portanto, exigem um principal autenticado que nenhum caminho de login configurado consegue produzir hoje, e o `UserDetailsService` local rejeita toda consulta. A postura atual de negar por padrão impede que rotas de reserva ou futuras se tornem acessíveis anonimamente enquanto essas fronteiras seguem em desenvolvimento.
+Operadores humanos autenticam por um emissor OIDC externo, e a organização em que a requisição age é selecionada por requisição e aceita apenas contra uma associação ACTIVE (ADR 0007). Organizações, projetos e ambientes são alcançáveis por HTTP.
+
+Ela ainda não implementa limitação de taxa e não expõe endpoints HTTP para criar feature flags ou credenciais de SDK, de modo que esses recursos ainda nascem na camada de serviço. A revogação de operador segue o tempo de vida do token do emissor, em vez de ter efeito imediato. Quando nenhum emissor OIDC está configurado, não existe decoder de token e o plano de controle permanece fechado, o que mantém um deploy não configurado negado por padrão, em vez de aberto por padrão.
 
 Toda mudança que introduza uma nova dependência externa, tipo de credencial, endpoint público, busca de tenant, exportador de telemetria ou logging de corpo de requisição precisa atualizar este modelo de ameaças no mesmo pull request.
 

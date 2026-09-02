@@ -10,6 +10,7 @@ ADRs capture decisions that materially affect architecture, security, data owner
 | [0004](0004-row-based-multitenancy.md) | Use row-based tenant isolation initially | Accepted |
 | [0005](0005-postgresql-source-of-truth-and-layered-cache.md) | Keep PostgreSQL authoritative and layer caches | Accepted |
 | [0006](0006-spring-data-jdbc-for-aggregate-persistence.md) | Use Spring Data JDBC for aggregate persistence | Accepted |
+| [0007](0007-external-oidc-identity-with-per-request-organization.md) | Authenticate operators with external OIDC and select the organization per request | Accepted |
 
 ## ADR template
 
@@ -40,6 +41,7 @@ Os ADRs registram decisões que afetam materialmente arquitetura, segurança, pr
 | [0004](0004-row-based-multitenancy.md) | Usar isolamento de tenant por linha inicialmente | Aceito |
 | [0005](0005-postgresql-source-of-truth-and-layered-cache.md) | Manter o PostgreSQL autoritativo e usar caches em camadas | Aceito |
 | [0006](0006-spring-data-jdbc-for-aggregate-persistence.md) | Usar Spring Data JDBC para persistência de agregados | Aceito |
+| [0007](0007-external-oidc-identity-with-per-request-organization.md) | Autenticar operadores com OIDC externo e selecionar a organização por requisição | Aceito |
 
 ## Modelo de ADR
 
