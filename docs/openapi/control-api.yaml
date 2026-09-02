@@ -1,0 +1,320 @@
+openapi: 3.1.0
+info:
+  title: FlagForge Control API
+  version: 1.0.0
+  description: |
+    Operator contract for tenant resources. Identity comes from an OIDC-issued bearer token; the
+    organization is selected per request and is trusted only after an ACTIVE membership is found
+    for that actor. Organization identifiers are never accepted from a request body.
+servers:
+  - url: http://localhost:8080
+paths:
+  /api/v1/organizations:
+    post:
+      operationId: registerOrganization
+      summary: Register an organization and become its founding OWNER
+      description: |
+        The only operation that needs no organization context. The founding actor is taken from the
+        token subject, so a caller cannot found an organization owned by somebody else; any actor
+        field in the body is ignored.
+      security:
+        - operatorToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterOrganizationRequest'
+            examples:
+              acme:
+                value:
+                  slug: acme
+                  displayName: Acme
+      responses:
+        '201':
+          description: Organization registered
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Organization'
+        '400':
+          $ref: '#/components/responses/InvalidTenantRequest'
+        '401':
+          $ref: '#/components/responses/AuthenticationRequired'
+  /api/v1/organizations/current:
+    get:
+      operationId: getCurrentOrganization
+      summary: Read the organization selected by the request
+      security:
+        - operatorToken: []
+      parameters:
+        - $ref: '#/components/parameters/OrganizationHeader'
+      responses:
+        '200':
+          description: Current organization
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Organization'
+        '401':
+          $ref: '#/components/responses/AuthenticationRequired'
+        '403':
+          $ref: '#/components/responses/AccessDenied'
+        '404':
+          $ref: '#/components/responses/ResourceNotFound'
+  /api/v1/projects:
+    post:
+      operationId: createProject
+      summary: Create a project
+      security:
+        - operatorToken: []
+      parameters:
+        - $ref: '#/components/parameters/OrganizationHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateProjectRequest'
+      responses:
+        '201':
+          description: Project created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Project'
+        '400':
+          $ref: '#/components/responses/InvalidTenantRequest'
+        '401':
+          $ref: '#/components/responses/AuthenticationRequired'
+        '403':
+          $ref: '#/components/responses/AccessDenied'
+  /api/v1/projects/{projectId}:
+    get:
+      operationId: getProject
+      summary: Read one project
+      security:
+        - operatorToken: []
+      parameters:
+        - $ref: '#/components/parameters/OrganizationHeader'
+        - $ref: '#/components/parameters/ProjectId'
+      responses:
+        '200':
+          description: Project
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Project'
+        '401':
+          $ref: '#/components/responses/AuthenticationRequired'
+        '403':
+          $ref: '#/components/responses/AccessDenied'
+        '404':
+          $ref: '#/components/responses/ResourceNotFound'
+  /api/v1/projects/{projectId}/environments:
+    post:
+      operationId: createEnvironment
+      summary: Create an environment inside a project
+      security:
+        - operatorToken: []
+      parameters:
+        - $ref: '#/components/parameters/OrganizationHeader'
+        - $ref: '#/components/parameters/ProjectId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateEnvironmentRequest'
+      responses:
+        '201':
+          description: Environment created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Environment'
+        '400':
+          $ref: '#/components/responses/InvalidTenantRequest'
+        '401':
+          $ref: '#/components/responses/AuthenticationRequired'
+        '403':
+          $ref: '#/components/responses/AccessDenied'
+        '404':
+          $ref: '#/components/responses/ResourceNotFound'
+  /api/v1/environments/{environmentId}:
+    get:
+      operationId: getEnvironment
+      summary: Read one environment
+      security:
+        - operatorToken: []
+      parameters:
+        - $ref: '#/components/parameters/OrganizationHeader'
+        - name: environmentId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Environment
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Environment'
+        '401':
+          $ref: '#/components/responses/AuthenticationRequired'
+        '403':
+          $ref: '#/components/responses/AccessDenied'
+        '404':
+          $ref: '#/components/responses/ResourceNotFound'
+components:
+  securitySchemes:
+    operatorToken:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: OIDC-issued token whose subject identifies the operator.
+  parameters:
+    OrganizationHeader:
+      name: X-FlagForge-Organization
+      in: header
+      required: true
+      description: |
+        Organization slug the request acts in. Accepted only when the authenticated actor holds an
+        ACTIVE membership in it; otherwise the request is treated as unauthenticated, so an
+        unknown organization and one the caller does not belong to cannot be told apart.
+      schema:
+        type: string
+        pattern: '^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$'
+    ProjectId:
+      name: projectId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+  responses:
+    AuthenticationRequired:
+      description: |
+        No usable identity. A missing token, a malformed or expired token, an unknown organization,
+        and a missing membership all produce this one response.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetail'
+    AccessDenied:
+      description: The actor is authenticated in this organization but its role lacks the permission.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetail'
+    ResourceNotFound:
+      description: |
+        The resource does not exist, or belongs to another organization. Both cases return this
+        response so resource existence cannot be probed across tenants.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetail'
+    InvalidTenantRequest:
+      description: The request body is malformed, or a slug or key is already taken.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetail'
+  schemas:
+    RegisterOrganizationRequest:
+      type: object
+      required: [slug, displayName]
+      properties:
+        slug:
+          type: string
+          pattern: '^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$'
+        displayName:
+          type: string
+          maxLength: 120
+    CreateProjectRequest:
+      type: object
+      required: [key, displayName]
+      properties:
+        key:
+          type: string
+          pattern: '^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$'
+        displayName:
+          type: string
+          maxLength: 120
+    CreateEnvironmentRequest:
+      type: object
+      required: [key, displayName]
+      properties:
+        key:
+          type: string
+          pattern: '^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$'
+        displayName:
+          type: string
+          maxLength: 120
+    Organization:
+      type: object
+      required: [id, slug, displayName, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        slug:
+          type: string
+        displayName:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+    Project:
+      type: object
+      required: [id, key, displayName, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        key:
+          type: string
+        displayName:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+    Environment:
+      type: object
+      required: [id, projectId, key, displayName, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        projectId:
+          type: string
+          format: uuid
+        key:
+          type: string
+        displayName:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+    ProblemDetail:
+      type: object
+      description: RFC 9457 problem details.
+      properties:
+        type:
+          type: string
+          format: uri
+        title:
+          type: string
+        status:
+          type: integer
+        detail:
+          type: string
+        instance:
+          type: string
+        errorCode:
+          type: string
+        correlationId:
+          type: string

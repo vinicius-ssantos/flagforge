@@ -23,7 +23,8 @@ class SecurityConfiguration {
     SecurityFilterChain securityFilterChain(
             HttpSecurity http,
             ProblemDetailsResponseWriter problemDetailsResponseWriter,
-            SdkCredentialAuthenticationFilter sdkCredentialAuthenticationFilter)
+            SdkCredentialAuthenticationFilter sdkCredentialAuthenticationFilter,
+            HumanAuthenticationFilter humanAuthenticationFilter)
             throws Exception {
         http
                 .csrf(AbstractHttpConfigurer::disable)
@@ -37,6 +38,12 @@ class SecurityConfiguration {
                                 SdkCredentialAuthenticationFilter
                                         .EVALUATE_AUTHORITY)
                         .requestMatchers(
+                                "/api/v1/organizations",
+                                "/api/v1/organizations/current",
+                                "/api/v1/projects",
+                                "/api/v1/projects/*",
+                                "/api/v1/projects/*/environments",
+                                "/api/v1/environments/*",
                                 "/api/v1/environments/*/publication",
                                 "/api/v1/environments/*/audit",
                                 "/api/v1/environments/*/revisions",
@@ -52,6 +59,9 @@ class SecurityConfiguration {
                         .accessDeniedHandler(problemDetailsResponseWriter::writeForbidden))
                 .addFilterBefore(
                         sdkCredentialAuthenticationFilter,
+                        AnonymousAuthenticationFilter.class)
+                .addFilterBefore(
+                        humanAuthenticationFilter,
                         AnonymousAuthenticationFilter.class)
                 .headers(Customizer.withDefaults());
 

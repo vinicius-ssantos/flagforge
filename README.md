@@ -200,7 +200,7 @@ Delivered and covered by tests: executable module-boundary verification, the Con
 
 **M3 — Distributed Evaluation** has not started. Publication already writes transactional outbox rows, but they stay `PENDING` because no relay consumes them yet (#18). Caffeine and Redis caching (#19), the Java SDK and OpenFeature provider (#20), and reproducible benchmarks (#21) remain open.
 
-One gap belongs to no milestone. The Control API has no human authentication mechanism and no HTTP endpoints for creating organizations, projects, environments, flags, or SDK credentials. Control-plane routes require an authenticated principal, but no configured login path can produce one, so an operator cannot yet administer the platform over HTTP. Evaluation is reachable today only with an SDK credential created through the service layer.
+Operator access (#47) is partly delivered and belongs to no milestone. Human authentication and the organization, project, and environment endpoints exist; feature flag and SDK credential endpoints do not, so those resources still originate in the service layer and the platform is not yet self-sufficient end to end.
 
 ## Quick start
 
@@ -260,7 +260,41 @@ GET http://localhost:8080/livez
 GET http://localhost:8080/readyz
 ```
 
-All application routes are default-denied until the authentication and RBAC slice is delivered. Health responses never expose component details. Readiness includes PostgreSQL; liveness does not.
+Application routes are default-denied. Health responses never expose component details. Readiness includes PostgreSQL; liveness does not.
+
+### Authenticate as an operator
+
+Human identity comes from an external OIDC issuer (see [ADR 0007](docs/adr/0007-external-oidc-identity-with-per-request-organization.md)). Point the application at one with `FLAGFORGE_SECURITY_OIDC_ISSUER_URI`. Until that is set, no token decoder exists and the control plane stays closed.
+
+For local work, run the `dev` profile, which signs its own tokens with an RSA key generated in memory at startup:
+
+```bash
+sh ./mvnw --projects apps/control-api spring-boot:run -Dspring-boot.run.profiles=dev
+
+TOKEN=$(curl -s -X POST localhost:8080/api/v1/dev/tokens \
+  -H 'Content-Type: application/json' \
+  -d '{"actorId":"you@example.com"}' | jq -r .token)
+```
+
+The token says who you are; the `X-FlagForge-Organization` header says where you are acting, and is accepted only where you hold an active membership. Registering an organization is the one call that needs no header, and it makes you the founding OWNER:
+
+```bash
+curl -X POST localhost:8080/api/v1/organizations \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"slug":"acme","displayName":"Acme"}'
+
+curl -X POST localhost:8080/api/v1/projects \
+  -H "Authorization: Bearer $TOKEN" -H 'X-FlagForge-Organization: acme' \
+  -H 'Content-Type: application/json' \
+  -d '{"key":"checkout","displayName":"Checkout"}'
+
+curl -X POST localhost:8080/api/v1/projects/$PROJECT_ID/environments \
+  -H "Authorization: Bearer $TOKEN" -H 'X-FlagForge-Organization: acme' \
+  -H 'Content-Type: application/json' \
+  -d '{"key":"production","displayName":"Production"}'
+```
+
+The `dev` profile signs a token for any actor asked for, so it exists only under that profile and must never be enabled in a deployed environment. The contract is in [`docs/openapi/control-api.yaml`](docs/openapi/control-api.yaml).
 
 Structured ECS logs include a validated or generated `X-Correlation-ID`. OpenTelemetry integration is available, while OTLP trace export is disabled by default. It can be enabled explicitly with `FLAGFORGE_OTEL_EXPORT_ENABLED=true` and configured through `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`. Sampling is controlled by `FLAGFORGE_TRACING_SAMPLING_PROBABILITY`.
 
@@ -499,7 +533,7 @@ Entregue e coberto por testes: verificação executável das fronteiras de módu
 
 O **M3 — Avaliação Distribuída** ainda não começou. A publicação já grava linhas no outbox transacional, mas elas permanecem em `PENDING` porque nenhum relay as consome ainda (#18). O cache com Caffeine e Redis (#19), o SDK Java e o provider OpenFeature (#20) e os benchmarks reprodutíveis (#21) seguem abertos.
 
-Uma lacuna não pertence a nenhum marco. A Control API não tem mecanismo de autenticação humana nem endpoints HTTP para criar organizações, projetos, ambientes, flags ou credenciais de SDK. As rotas do plano de controle exigem um principal autenticado, mas nenhum caminho de login configurado consegue produzi-lo, de modo que um operador ainda não administra a plataforma por HTTP. Hoje, a avaliação só é alcançável com uma credencial de SDK criada pela camada de serviço.
+O acesso de operador (#47) está parcialmente entregue e não pertence a nenhum marco. A autenticação humana e os endpoints de organização, projeto e ambiente existem; os de feature flag e credencial de SDK não, de modo que esses recursos ainda nascem na camada de serviço e a plataforma ainda não é autossuficiente ponta a ponta.
 
 ## Início rápido
 
@@ -559,7 +593,41 @@ GET http://localhost:8080/livez
 GET http://localhost:8080/readyz
 ```
 
-Todas as rotas da aplicação são negadas por padrão até que a fatia de autenticação e RBAC seja entregue. As respostas de health nunca expõem detalhes de componentes. O readiness inclui o PostgreSQL; o liveness não.
+As rotas da aplicação são negadas por padrão. As respostas de health nunca expõem detalhes de componentes. O readiness inclui o PostgreSQL; o liveness não.
+
+### Autenticar como operador
+
+A identidade humana vem de um emissor OIDC externo (veja o [ADR 0007](docs/adr/0007-external-oidc-identity-with-per-request-organization.md)). Aponte a aplicação para um deles com `FLAGFORGE_SECURITY_OIDC_ISSUER_URI`. Enquanto isso não estiver definido, não existe decoder de token e o plano de controle permanece fechado.
+
+Para trabalho local, use o perfil `dev`, que assina os próprios tokens com uma chave RSA gerada em memória no startup:
+
+```bash
+sh ./mvnw --projects apps/control-api spring-boot:run -Dspring-boot.run.profiles=dev
+
+TOKEN=$(curl -s -X POST localhost:8080/api/v1/dev/tokens \
+  -H 'Content-Type: application/json' \
+  -d '{"actorId":"voce@example.com"}' | jq -r .token)
+```
+
+O token diz quem você é; o header `X-FlagForge-Organization` diz onde você está agindo, e só é aceito onde você tem associação ativa. Registrar uma organização é a única chamada que dispensa o header, e ela torna você o OWNER fundador:
+
+```bash
+curl -X POST localhost:8080/api/v1/organizations \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"slug":"acme","displayName":"Acme"}'
+
+curl -X POST localhost:8080/api/v1/projects \
+  -H "Authorization: Bearer $TOKEN" -H 'X-FlagForge-Organization: acme' \
+  -H 'Content-Type: application/json' \
+  -d '{"key":"checkout","displayName":"Checkout"}'
+
+curl -X POST localhost:8080/api/v1/projects/$PROJECT_ID/environments \
+  -H "Authorization: Bearer $TOKEN" -H 'X-FlagForge-Organization: acme' \
+  -H 'Content-Type: application/json' \
+  -d '{"key":"production","displayName":"Production"}'
+```
+
+O perfil `dev` assina token para qualquer ator solicitado, então ele existe apenas sob esse perfil e nunca deve ser habilitado em um ambiente implantado. O contrato está em [`docs/openapi/control-api.yaml`](docs/openapi/control-api.yaml).
 
 Os logs estruturados em ECS incluem um `X-Correlation-ID` validado ou gerado. A integração com OpenTelemetry está disponível, enquanto a exportação de traces via OTLP fica desabilitada por padrão. Ela pode ser habilitada explicitamente com `FLAGFORGE_OTEL_EXPORT_ENABLED=true` e configurada por `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`. A amostragem é controlada por `FLAGFORGE_TRACING_SAMPLING_PROBABILITY`.
 

@@ -43,7 +43,7 @@ Optimized for predictable reads:
 
 | Module | Responsibility | Owns |
 |---|---|---|
-| identity | Authentication principals and credentials | users, service credentials |
+| identity | Reserved. Human identity is external (ADR 0007), so no user store is planned; SDK credentials are owned by `credentials` | — |
 | tenancy | Organizations, membership, roles, quotas | organizations, memberships |
 | projects | Projects and environments | projects, environments |
 | flags | Flag lifecycle and variants | feature flags, variants |
@@ -167,7 +167,7 @@ Control and Evaluation APIs may become independent deployables from the same rep
 
 ## Security architecture
 
-- Human access uses OIDC/OAuth2 and organization membership.
+- Human access uses OIDC/OAuth2; the acting organization is selected per request and accepted only against an ACTIVE membership.
 - Server-side SDKs use environment-scoped keys with minimum permissions.
 - Client-side keys, if introduced, can only access explicitly client-safe flags.
 - API keys are displayed once and stored as strong hashes.
@@ -248,7 +248,7 @@ Otimizado para leituras previsíveis:
 
 | Módulo | Responsabilidade | Possui |
 |---|---|---|
-| identity | Principais de autenticação e credenciais | usuários, credenciais de serviço |
+| identity | Reservado. A identidade humana é externa (ADR 0007), então nenhum store de usuários está previsto; as credenciais de SDK pertencem a `credentials` | — |
 | tenancy | Organizações, associação, papéis, cotas | organizações, associações |
 | projects | Projetos e ambientes | projetos, ambientes |
 | flags | Ciclo de vida das flags e variantes | feature flags, variantes |
@@ -373,7 +373,7 @@ As APIs de Controle e de Avaliação podem se tornar artefatos de deploy indepen
 
 ## Arquitetura de segurança
 
-- O acesso humano usa OIDC/OAuth2 e associação à organização.
+- O acesso humano usa OIDC/OAuth2; a organização em que se age é selecionada por requisição e aceita apenas contra uma associação ACTIVE.
 - SDKs do lado do servidor usam chaves com escopo de ambiente e permissões mínimas.
 - Chaves do lado do cliente, se introduzidas, só podem acessar flags explicitamente seguras para cliente.
 - Chaves de API são exibidas uma única vez e armazenadas como hashes fortes.
