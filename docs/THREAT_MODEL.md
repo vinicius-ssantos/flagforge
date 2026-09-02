@@ -1,6 +1,6 @@
 # Initial Threat Model
 
-This document records the minimum security and observability boundaries that must exist before FlagForge begins implementing tenant-owned resources. It is intentionally scoped to the M0 Control API foundation and must evolve with the domain.
+This document records the minimum security and observability boundaries that must exist before FlagForge begins implementing tenant-owned resources. It was written for the M0 Control API foundation and has been kept current through M2; it must continue to evolve with the domain.
 
 ## Protected assets
 
@@ -101,7 +101,9 @@ Responses include defensive browser headers even though the current service is a
 
 ## Residual risk
 
-The application now defines tenant memberships, Control Plane roles, explicit permissions, and environment-scoped SDK credential lifecycle semantics. It does not yet integrate an external human identity provider, expose production HTTP authentication endpoints, implement rate limiting, or provide protected-environment approval. The current default-deny posture prevents placeholder or future routes from becoming anonymously accessible while those boundaries remain under development.
+The application now defines tenant memberships, Control Plane roles, explicit permissions, environment-scoped SDK credential lifecycle semantics, and protected-environment change requests with approval and self-approval prevention.
+
+It does not yet integrate an external human identity provider, expose production HTTP authentication endpoints, or implement rate limiting. It also exposes no HTTP endpoints for creating organizations, projects, environments, flags, or SDK credentials. Control-plane routes therefore require an authenticated principal that no configured login path can currently produce, and the local `UserDetailsService` rejects every lookup. The current default-deny posture prevents placeholder or future routes from becoming anonymously accessible while those boundaries remain under development.
 
 Any change that introduces a new external dependency, credential type, public endpoint, tenant lookup, telemetry exporter, or request-body logging must update this threat model in the same pull request.
 
@@ -112,7 +114,7 @@ Any change that introduces a new external dependency, credential type, public en
 
 # Modelo de Ameaças Inicial
 
-Este documento registra as fronteiras mínimas de segurança e observabilidade que precisam existir antes de o FlagForge começar a implementar recursos pertencentes a tenants. Ele tem escopo intencionalmente limitado à fundação M0 da Control API e precisa evoluir com o domínio.
+Este documento registra as fronteiras mínimas de segurança e observabilidade que precisam existir antes de o FlagForge começar a implementar recursos pertencentes a tenants. Ele foi escrito para a fundação M0 da Control API e vem sendo mantido atualizado até o M2; precisa continuar evoluindo com o domínio.
 
 ## Ativos protegidos
 
@@ -213,7 +215,9 @@ As respostas incluem cabeçalhos defensivos de navegador, mesmo o serviço atual
 
 ## Risco residual
 
-A aplicação agora define associações de tenant, papéis do Plano de Controle, permissões explícitas e a semântica de ciclo de vida das credenciais de SDK com escopo de ambiente. Ela ainda não integra um provedor externo de identidade humana, não expõe endpoints HTTP de autenticação de produção, não implementa limitação de taxa nem oferece aprovação de ambiente protegido. A postura atual de negar por padrão impede que rotas de reserva ou futuras se tornem acessíveis anonimamente enquanto essas fronteiras seguem em desenvolvimento.
+A aplicação agora define associações de tenant, papéis do Plano de Controle, permissões explícitas, a semântica de ciclo de vida das credenciais de SDK com escopo de ambiente e as solicitações de mudança em ambiente protegido, com aprovação e prevenção de autoaprovação.
+
+Ela ainda não integra um provedor externo de identidade humana, não expõe endpoints HTTP de autenticação de produção nem implementa limitação de taxa. Também não expõe endpoints HTTP para criar organizações, projetos, ambientes, flags ou credenciais de SDK. As rotas do plano de controle, portanto, exigem um principal autenticado que nenhum caminho de login configurado consegue produzir hoje, e o `UserDetailsService` local rejeita toda consulta. A postura atual de negar por padrão impede que rotas de reserva ou futuras se tornem acessíveis anonimamente enquanto essas fronteiras seguem em desenvolvimento.
 
 Toda mudança que introduza uma nova dependência externa, tipo de credencial, endpoint público, busca de tenant, exportador de telemetria ou logging de corpo de requisição precisa atualizar este modelo de ameaças no mesmo pull request.
 
