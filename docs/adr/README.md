@@ -11,6 +11,7 @@ ADRs capture decisions that materially affect architecture, security, data owner
 | [0005](0005-postgresql-source-of-truth-and-layered-cache.md) | Keep PostgreSQL authoritative and layer caches | Accepted |
 | [0006](0006-spring-data-jdbc-for-aggregate-persistence.md) | Use Spring Data JDBC for aggregate persistence | Accepted |
 | [0007](0007-external-oidc-identity-with-per-request-organization.md) | Authenticate operators with external OIDC and select the organization per request | Accepted |
+| [0008](0008-outbox-ownership-and-at-least-once-delivery.md) | Move outbox ownership to distribution and deliver at least once | Accepted |
 
 ## ADR template
 
@@ -42,6 +43,7 @@ Os ADRs registram decisões que afetam materialmente arquitetura, segurança, pr
 | [0005](0005-postgresql-source-of-truth-and-layered-cache.md) | Manter o PostgreSQL autoritativo e usar caches em camadas | Aceito |
 | [0006](0006-spring-data-jdbc-for-aggregate-persistence.md) | Usar Spring Data JDBC para persistência de agregados | Aceito |
 | [0007](0007-external-oidc-identity-with-per-request-organization.md) | Autenticar operadores com OIDC externo e selecionar a organização por requisição | Aceito |
+| [0008](0008-outbox-ownership-and-at-least-once-delivery.md) | Mover a propriedade do outbox para distribution e entregar ao menos uma vez | Aceito |
 
 ## Modelo de ADR
 

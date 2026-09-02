@@ -22,5 +22,8 @@ abstract class PostgreSqlIntegrationTestSupport {
         registry.add("spring.datasource.url", POSTGRESQL::getJdbcUrl);
         registry.add("spring.datasource.username", POSTGRESQL::getUsername);
         registry.add("spring.datasource.password", POSTGRESQL::getPassword);
+        // The relay would otherwise wake on every publication and race assertions about outbox
+        // state. Tests that exercise delivery drive the relay directly instead.
+        registry.add("flagforge.distribution.relay.enabled", () -> false);
     }
 }

@@ -17,6 +17,8 @@ import io.github.viniciusssantos.flagforge.audit.AuditTrailService;
 import io.github.viniciusssantos.flagforge.audit.AuditTrailService.AuditAction;
 import io.github.viniciusssantos.flagforge.audit.AuditTrailService.AuditCommand;
 import io.github.viniciusssantos.flagforge.audit.AuditTrailService.AuditResourceType;
+import io.github.viniciusssantos.flagforge.distribution.ConfigurationEventOutbox;
+import io.github.viniciusssantos.flagforge.distribution.PublishedConfigurationEvent;
 import io.github.viniciusssantos.flagforge.publishing.PublicationGraphValidator.PublicationGraphException;
 import io.github.viniciusssantos.flagforge.publishing.PublishedSnapshotCodec.EncodedSnapshot;
 import io.github.viniciusssantos.flagforge.publishing.PublishedSnapshotCodec.PublishedFlag;
@@ -53,6 +55,7 @@ public class PublicationService {
     private final PublishedSnapshotCodec snapshotCodec;
     private final PublicationGraphValidator publicationGraphValidator;
     private final AuditTrailService auditTrailService;
+    private final ConfigurationEventOutbox configurationEventOutbox;
 
     public PublicationService(
             NamedParameterJdbcTemplate jdbcTemplate,
@@ -60,13 +63,15 @@ public class PublicationService {
             TenantHierarchyService tenantHierarchyService,
             PublishedSnapshotCodec snapshotCodec,
             PublicationGraphValidator publicationGraphValidator,
-            AuditTrailService auditTrailService) {
+            AuditTrailService auditTrailService,
+            ConfigurationEventOutbox configurationEventOutbox) {
         this.jdbcTemplate = jdbcTemplate;
         this.authorizationService = authorizationService;
         this.tenantHierarchyService = tenantHierarchyService;
         this.snapshotCodec = snapshotCodec;
         this.publicationGraphValidator = publicationGraphValidator;
         this.auditTrailService = auditTrailService;
+        this.configurationEventOutbox = configurationEventOutbox;
     }
 
     @Transactional
@@ -178,7 +183,7 @@ public class PublicationService {
                         "checksum", encoded.checksum(),
                         "revisionKind", RevisionKind.PUBLISH.name()),
                 publishedAt));
-        insertOutboxEvent(
+        recordConfigurationEvent(
                 revisionId,
                 environment,
                 revisionNumber,
@@ -313,7 +318,7 @@ public class PublicationService {
                         "sourceRevisionNumber",
                         Long.toString(source.revisionNumber())),
                 publishedAt));
-        insertOutboxEvent(
+        recordConfigurationEvent(
                 revisionId,
                 environment,
                 revisionNumber,
@@ -821,56 +826,21 @@ public class PublicationService {
                         .addValue("correlationId", correlationId));
     }
 
-    private void insertOutboxEvent(
+    private void recordConfigurationEvent(
             UUID revisionId,
             Environment environment,
             long revisionNumber,
             String checksum,
             Instant publishedAt) {
-        String payload = outboxPayload(
+        configurationEventOutbox.record(new PublishedConfigurationEvent(
+                UUID.randomUUID(),
+                environment.organizationId(),
+                environment.projectId(),
+                environment.id(),
                 revisionId,
-                environment,
                 revisionNumber,
                 checksum,
-                publishedAt);
-        String sql = """
-                INSERT INTO flagforge.configuration_outbox (
-                    id,
-                    organization_id,
-                    project_id,
-                    environment_id,
-                    revision_id,
-                    revision_number,
-                    event_type,
-                    checksum,
-                    payload,
-                    status,
-                    delivery_attempts,
-                    occurred_at,
-                    available_at
-                ) VALUES (
-                    :outboxId,
-                    :organizationId,
-                    :projectId,
-                    :environmentId,
-                    :id,
-                    :revisionNumber,
-                    :eventType,
-                    :checksum,
-                    CAST(:payload AS jsonb),
-                    'PENDING',
-                    0,
-                    :publishedAt,
-                    :publishedAt
-                )
-                """;
-        jdbcTemplate.update(
-                sql,
-                baseParameters(revisionId, environment, revisionNumber, publishedAt)
-                        .addValue("outboxId", UUID.randomUUID())
-                        .addValue("eventType", PUBLISHED_EVENT)
-                        .addValue("checksum", checksum)
-                        .addValue("payload", payload));
+                publishedAt));
     }
 
     private void moveCurrentPointer(
@@ -931,24 +901,6 @@ public class PublicationService {
                 .addValue("environmentId", environment.id())
                 .addValue("revisionNumber", revisionNumber)
                 .addValue("publishedAt", Timestamp.from(publishedAt));
-    }
-
-    private static String outboxPayload(
-            UUID revisionId,
-            Environment environment,
-            long revisionNumber,
-            String checksum,
-            Instant publishedAt) {
-        return "{" +
-                "\"eventType\":\"" + PUBLISHED_EVENT + "\"," +
-                "\"revisionId\":\"" + revisionId + "\"," +
-                "\"organizationId\":\"" + environment.organizationId() + "\"," +
-                "\"projectId\":\"" + environment.projectId() + "\"," +
-                "\"environmentId\":\"" + environment.id() + "\"," +
-                "\"revisionNumber\":" + revisionNumber + "," +
-                "\"checksum\":\"" + checksum + "\"," +
-                "\"publishedAt\":\"" + publishedAt + "\"" +
-                "}";
     }
 
     private static PublishedRevision mapPublishedRevision(ResultSet resultSet)

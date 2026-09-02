@@ -81,3 +81,12 @@ management:
       export:
         otlp:
           endpoint: ${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:http://localhost:4318/v1/traces}
+
+flagforge:
+  distribution:
+    relay:
+      poll-interval: ${FLAGFORGE_RELAY_POLL_INTERVAL:5s}
+      batch-size: ${FLAGFORGE_RELAY_BATCH_SIZE:100}
+      max-attempts: ${FLAGFORGE_RELAY_MAX_ATTEMPTS:8}
+      retry-backoff: ${FLAGFORGE_RELAY_RETRY_BACKOFF:2s}
+      max-backoff: ${FLAGFORGE_RELAY_MAX_BACKOFF:5m}
