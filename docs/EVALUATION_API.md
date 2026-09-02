@@ -171,3 +171,184 @@ The test suite covers:
 - generic missing and invalid credential failures;
 - two tenants with the same flag key resolving different values through their own environment SDK keys;
 - stable Problem Details for malformed requests.
+
+---
+
+<details>
+<summary><strong>🇧🇷 Português (pt-BR)</strong></summary>
+
+# API de Avaliação
+
+## Endpoint
+
+```http
+POST /api/v1/evaluate/{flagKey}
+Authorization: Bearer <credencial de SDK do ambiente>
+Content-Type: application/json
+```
+
+A requisição não aceita identificadores de organização, projeto ou ambiente. A credencial de SDK autenticada determina a organização e o ambiente, e o ambiente determina o projeto cujas flags podem ser avaliadas.
+
+O contrato legível por máquina e os exemplos estão disponíveis em `docs/openapi/evaluation-api.yaml`.
+
+## Contrato da requisição
+
+```json
+{
+  "type": "BOOLEAN",
+  "defaultValue": false,
+  "targetingKey": "subject-123",
+  "attributes": {
+    "country": {
+      "type": "STRING",
+      "value": "BR"
+    },
+    "score": {
+      "type": "NUMBER",
+      "value": 91.5
+    }
+  }
+}
+```
+
+Quem chama precisa declarar:
+
+- o tipo esperado da flag;
+- um valor de fallback exatamente desse tipo;
+- uma chave de segmentação estável;
+- atributos opcionais explicitamente tipados.
+
+A API não converte `"false"` em `false`, `"18"` em `18`, nem strings arbitrárias em versões semânticas. Uma requisição tipada malformada é rejeitada com Problem Details (RFC 9457) e HTTP 400.
+
+## Autenticação e isolamento de ambiente
+
+A avaliação usa credenciais de SDK com escopo de ambiente e escopo `EVALUATE`.
+
+A credencial Bearer é interpretada e verificada uma única vez pelo filtro de autenticação. O contexto de segurança armazena apenas o principal técnico do SDK:
+
+- ID da credencial;
+- ID da organização;
+- ID do ambiente;
+- escopo da credencial.
+
+A credencial em texto plano não é retida após a autenticação. Credenciais ausentes, malformadas, revogadas, desconhecidas e inválidas produzem a mesma resposta genérica HTTP 401.
+
+Como não existe seletor de ambiente na requisição, uma credencial válida não consegue pedir ao endpoint a avaliação de outro ambiente. A consulta ao banco também inclui a organização derivada da credencial.
+
+## Contrato da resposta
+
+Uma avaliação concluída retorna HTTP 200 e inclui:
+
+- valor avaliado;
+- tipo do valor;
+- variante selecionada, quando existir;
+- razão efetiva;
+- razão de origem para resultados defasados;
+- versão da configuração;
+- metadados estáveis de erro;
+- chave da regra que casou, quando relevante;
+- chave do pré-requisito reprovado, quando relevante;
+- bucket determinístico para divisões percentuais;
+- indicador de defasagem.
+
+Exemplo:
+
+```json
+{
+  "flagKey": "checkout-v2",
+  "valueType": "BOOLEAN",
+  "value": true,
+  "variant": "enabled",
+  "reason": "TARGETING_MATCH",
+  "sourceReason": null,
+  "configurationVersion": "revision-42",
+  "error": {
+    "code": "NONE",
+    "message": null
+  },
+  "matchedRuleKey": "internal-beta",
+  "failedPrerequisiteKey": null,
+  "bucket": null,
+  "stale": false
+}
+```
+
+## Modelo de razões
+
+| Razão | Significado |
+| --- | --- |
+| `TARGETING_MATCH` | Uma regra ordenada de segmentação selecionou a variante. |
+| `SPLIT` | Uma alocação percentual determinística selecionou a variante. |
+| `DEFAULT` | Nenhuma regra de segmentação casou e nenhuma divisão substituiu o padrão. |
+| `DISABLED` | A flag não está ativa; o fallback de quem chamou é retornado. |
+| `PREREQUISITE_FAILED` | Um pré-requisito produziu uma variante diferente; o padrão da flag é retornado. |
+| `STALE` | Foi usado um snapshot de último estado bom conhecido. `sourceReason` preserva a decisão original. |
+| `ERROR` | O fallback de quem chamou é retornado com metadados estáveis de erro. |
+
+## Semântica de fallback
+
+Flags desconhecidas, incompatibilidade com o tipo requisitado, configuração compilada inválida e indisponibilidade de snapshot retornam o fallback declarado por quem chamou, com `reason = ERROR`.
+
+Trata-se de uma resposta de domínio, e não de um erro de transporte HTTP, porque quem chama via SDK precisa sempre receber um valor do tipo requisitado. Os metadados de erro explicam por que o fallback foi usado.
+
+Requisições malformadas são diferentes: quando o servidor não consegue estabelecer um par válido de tipo requisitado e fallback, ele retorna HTTP 400.
+
+## Fonte de configuração
+
+A API depende de `EvaluationSnapshotProvider`, e não diretamente de uma tecnologia específica de persistência.
+
+O provider inicial lê a flag atual do projeto e suas variantes do PostgreSQL e cria um identificador de versão transitório a partir das versões otimistas de ambiente e de flag. Ele deliberadamente ainda não contém regras de segmentação nem divisões percentuais persistidas, porque essas pertencem a revisões publicadas imutáveis.
+
+O marco de publicação substituirá esse provider por snapshots imutáveis sem alterar os contratos HTTP ou de serviço. Um avaliador nunca deve combinar dados de regra, segmento, variante ou pré-requisito de versões publicadas diferentes.
+
+## Divisões percentuais determinísticas
+
+Um snapshot compilado pode conter alocações ordenadas de variantes cujas unidades inteiras somam exatamente 100.000. O serviço de avaliação usa `flagforge-rollout-v1` e retorna o bucket selecionado para fins de explicabilidade.
+
+A mesma organização, projeto, ambiente, chave de flag, chave de alocação e chave de segmentação produzem o mesmo bucket. Os detalhes de alocação são dados de configuração e não são aceitos a partir da requisição de avaliação.
+
+## Comportamento defasado (stale)
+
+Um futuro provider de cache pode servir um snapshot validado de último estado bom conhecido durante a degradação de dependências. Esse resultado usa:
+
+```text
+reason = STALE
+sourceReason = razão original da decisão
+stale = true
+configurationVersion = versão efetivamente servida
+```
+
+O provider atual em PostgreSQL reporta `stale = false`. Esse contrato é definido agora para que o trabalho de cache e de recuperação de falhas possa ser adicionado sem quebrar a API.
+
+## Privacidade e telemetria
+
+O endpoint de avaliação não registra em log corpos de requisição, chaves de segmentação em texto puro, credenciais de SDK ou atributos de contexto.
+
+O contador inicial usa somente tags enumeradas e limitadas:
+
+- razão;
+- tipo de valor requisitado;
+- código de erro;
+- booleano de defasagem.
+
+Chaves de flag, chaves de segmentação, IDs de organização, IDs de ambiente, chaves de regra e atributos arbitrários não são rótulos de métrica.
+
+## Afirmações de desempenho
+
+Esta issue estabelece apenas comportamento e instrumentação. Ela não declara meta de latência ou de throughput. Benchmarks reprodutíveis medirão posteriormente os caminhos de PostgreSQL frio, Redis quente e cache em processo quente antes de qualquer objetivo numérico ser proposto.
+
+## Verificação
+
+A suíte de testes cobre:
+
+- validação exata de fallback tipado;
+- resultados de segmentação, padrão, pré-requisito, divisão, desabilitado, defasado e erro;
+- repetição determinística de divisão;
+- fallback para flag desconhecida;
+- incompatibilidade com o tipo requisitado;
+- tags de métrica limitadas;
+- falhas genéricas de credencial ausente e inválida;
+- dois tenants com a mesma chave de flag resolvendo valores diferentes por meio de suas próprias chaves de SDK de ambiente;
+- Problem Details estáveis para requisições malformadas.
+
+</details>

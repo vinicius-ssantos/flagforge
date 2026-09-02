@@ -196,3 +196,209 @@ The suite proves:
 - segment and prerequisite cycle rejection;
 - key and Unicode normalization;
 - deterministic repeated evaluation over a fixed 10,000-context sample.
+
+---
+
+<details>
+<summary><strong>🇧🇷 Português (pt-BR)</strong></summary>
+
+# Semântica do motor de segmentação
+
+## Escopo
+
+O motor de segmentação avalia uma configuração imutável usando um contexto tipado. Ele é deliberadamente puro: não consulta PostgreSQL, Redis, serviços externos, relógios nem fontes aleatórias durante a avaliação.
+
+Entradas normalizadas iguais de configuração e contexto produzem saídas iguais.
+
+## Ordem de avaliação
+
+Para uma flag requisitada, o motor executa estes passos:
+
+1. validar a configuração completa;
+2. avaliar os pré-requisitos na ordem declarada;
+3. ordenar as regras de segmentação por prioridade inteira ascendente;
+4. avaliar as condições de cada regra com AND lógico;
+5. retornar a primeira regra que casar;
+6. retornar a variante padrão declarada quando nenhuma regra casar.
+
+Duas regras da mesma flag não podem compartilhar uma prioridade. A ordem da lista de regras, portanto, não é um critério de desempate oculto.
+
+Uma regra sem condições é uma regra catch-all explícita. Normalmente ela deve ter a menor precedência, por meio do maior número de prioridade.
+
+## Contexto tipado
+
+O contexto inicial suporta:
+
+- valores string;
+- números decimais de precisão arbitrária;
+- valores booleanos.
+
+Nomes de atributo têm espaços removidos nas bordas, são convertidos para minúsculas com regras independentes de locale e validados como chaves estáveis. Valores string não são aparados, convertidos para minúsculas, interpretados nem coagidos de qualquer outra forma.
+
+A igualdade numérica usa comparação numérica decimal, de modo que `9.5` e `9.50` são iguais. A string `"18"` não é igual ao número `18`.
+
+A chave de segmentação é obrigatória, permanece sensível a espaços em branco e é normalizada para Unicode NFC. Chaves de segmentação em texto puro e contextos completos não devem ser registrados em log nem usados como rótulos de métrica.
+
+## Condições
+
+### Igualdade tipada
+
+A igualdade exige tipos compatíveis:
+
+- string comparada com string;
+- booleano comparado com booleano;
+- número comparado com número.
+
+Um atributo ausente não casa. Um tipo incompatível em tempo de execução retorna `ATTRIBUTE_TYPE_MISMATCH`, em vez de coagir o valor.
+
+### Pertencimento a conjunto de strings
+
+Um atributo string pode ser testado contra um conjunto declarado não vazio. O pertencimento é exato e sensível a maiúsculas e minúsculas.
+
+### Comparação numérica
+
+Os operadores suportados são:
+
+- `EQUAL`;
+- `LESS_THAN`;
+- `LESS_THAN_OR_EQUAL`;
+- `GREATER_THAN`;
+- `GREATER_THAN_OR_EQUAL`.
+
+Ambos os operandos usam `BigDecimal`; comparação em ponto flutuante não é utilizada.
+
+### Comparação de versão semântica
+
+Condições de versão semântica seguem a precedência do SemVer 2.0:
+
+- major, minor e patch são comparados numericamente;
+- um release tem precedência maior que seu prerelease;
+- identificadores numéricos de prerelease são comparados numericamente;
+- identificadores numéricos de prerelease têm precedência menor que os não numéricos;
+- metadados de build não afetam a precedência.
+
+Exemplos:
+
+```text
+1.0.0-alpha < 1.0.0-alpha.1 < 1.0.0-beta.11 < 1.0.0-rc.1 < 1.0.0
+1.0.0+build.1 == 1.0.0+build.99
+```
+
+Versões malformadas em tempo de execução retornam `INVALID_SEMANTIC_VERSION`. Operandos de versão malformados são rejeitados durante a validação da configuração.
+
+## Segmentos
+
+Um segmento pode conter:
+
+- inclusões explícitas por chave de segmentação;
+- exclusões explícitas por chave de segmentação;
+- condições tipadas;
+- referências positivas ou negadas a outros segmentos.
+
+A precedência é fixa:
+
+1. exclusão explícita retorna não membro;
+2. inclusão explícita retorna membro;
+3. todas as condições do segmento precisam casar;
+4. um segmento sem pertencimento explícito e sem condições é não membro.
+
+Portanto, a exclusão vence quando a mesma chave de segmentação aparece em ambos os conjuntos explícitos.
+
+Segmentos aninhados são suportados, mas ciclos são rejeitados antes da avaliação. A profundidade em tempo de execução também é limitada de forma defensiva.
+
+## Pré-requisitos
+
+Um pré-requisito identifica outra flag e a variante que ela precisa produzir para o mesmo contexto de avaliação.
+
+Pré-requisitos são executados antes das regras da flag alvo. Quando um pré-requisito retorna outra variante, a flag alvo retorna:
+
+```text
+reason = PREREQUISITE_FAILED
+variant = variante padrão da flag alvo
+failedPrerequisiteKey = chave da flag de pré-requisito
+```
+
+Um erro produzido ao avaliar um pré-requisito é propagado como erro para a flag requisitada.
+
+O grafo completo de pré-requisitos precisa ser acíclico. Flags desconhecidas, variantes esperadas desconhecidas, pré-requisitos duplicados e ciclos são rejeitados durante a validação da configuração.
+
+## Modelo de resultado
+
+Avaliações bem-sucedidas usam uma destas razões:
+
+- `TARGETING_MATCH` — uma regra casou;
+- `DEFAULT` — nenhuma regra casou;
+- `PREREQUISITE_FAILED` — um pré-requisito produziu uma variante diferente.
+
+Erros usam:
+
+```text
+reason = ERROR
+variant = null
+errorCode = código estável legível por máquina
+```
+
+O motor não expõe classes de exceção, conteúdo do contexto nem chaves de segmentação no resultado.
+
+## Semântica de entradas ausentes e inválidas
+
+| Situação | Comportamento |
+| --- | --- |
+| Atributo ausente | a condição não casa |
+| Tipo de atributo incorreto | `ATTRIBUTE_TYPE_MISMATCH` |
+| SemVer inválido em tempo de execução | `INVALID_SEMANTIC_VERSION` |
+| Flag requisitada desconhecida | `UNKNOWN_FLAG` |
+| Nenhuma regra casa | variante padrão declarada |
+| Segmento desconhecido na configuração | falha de validação |
+| Pré-requisito desconhecido | falha de validação |
+| Prioridade de regra duplicada | falha de validação |
+| Grafo de segmentos cíclico | falha de validação |
+| Grafo de pré-requisitos cíclico | falha de validação |
+
+Falhas de configuração usam `TargetingValidationException` com um `ErrorCode` estável. Elas existem para bloquear a publicação antes que um avaliador possa observar configuração malformada.
+
+## Limites
+
+Os limites defensivos iniciais são:
+
+| Recurso | Limite |
+| --- | ---: |
+| Flags por configuração | 256 |
+| Segmentos por configuração | 256 |
+| Regras por flag | 128 |
+| Condições por regra ou segmento | 32 |
+| Atributos de contexto | 256 |
+| Profundidade do grafo de segmentos/pré-requisitos | 64 |
+
+Esses são guardas de correção e terminação, não cotas finais de plano de produto.
+
+## Integração com a publicação
+
+Esta issue define apenas o domínio de avaliação determinística. A publicação de snapshots compilará, mais adiante, flags, variantes, segmentos, regras, pré-requisitos e alocações de rollout persistidos em uma única configuração imutável.
+
+A publicação precisa validar:
+
+- que todas as referências pertencem à mesma organização, projeto e ambiente;
+- que todos os alvos de regra referenciam variantes declaradas;
+- que todos os grafos são acíclicos;
+- que o snapshot registra suas versões de algoritmo de segmentação e de rollout.
+
+Um avaliador nunca deve montar regras ou definições de segmento a partir de múltiplas versões publicadas.
+
+## Estratégia de testes
+
+A suíte comprova:
+
+- comportamento explícito de prioridade e de primeira correspondência;
+- igualdade tipada sem coerção;
+- operadores de conjunto, numéricos e SemVer;
+- semântica de atributos ausentes e inválidos;
+- precedência de inclusão/exclusão em segmentos;
+- referências a segmentos aninhados e negados;
+- sucesso e falha de pré-requisito;
+- rejeição de prioridade duplicada;
+- rejeição de ciclos de segmento e de pré-requisito;
+- normalização de chaves e Unicode;
+- avaliação repetida determinística sobre uma amostra fixa de 10.000 contextos.
+
+</details>

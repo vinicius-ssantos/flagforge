@@ -90,3 +90,102 @@ The initial product will not:
 | Overengineering | Deliver vertical slices and require evidence before extracting services |
 | Vendor lock-in | OpenFeature provider and exportable configuration model |
 
+
+---
+
+<details>
+<summary><strong>🇧🇷 Português (pt-BR)</strong></summary>
+
+# Visão de Produto
+
+## Visão
+
+O FlagForge dá aos times de software controle em tempo de execução sobre como as mudanças chegam aos clientes. Ele transforma um lançamento arriscado de tudo de uma vez em um processo controlado, observável e reversível.
+
+## Enunciado do problema
+
+Times que fazem deploy com frequência precisam responder perguntas que o ferramental de deploy sozinho não resolve:
+
+- Este código pode ser implantado sem ser exposto imediatamente?
+- A funcionalidade pode ser habilitada primeiro para usuários internos ou um único cliente?
+- A exposição pode aumentar gradualmente enquanto o comportamento é monitorado?
+- Um operador consegue interromper a mudança sem esperar por um novo build e deploy?
+- O time consegue comprovar quem alterou o comportamento em produção e por quê?
+- O suporte consegue explicar por que um cliente recebeu um resultado diferente?
+
+Flags caseiras costumam começar como variáveis de ambiente ou booleanos no banco de dados. Elas se tornam arriscadas quando a configuração não tem dono, histórico, segmentação determinística, isolamento entre tenants ou propagação confiável.
+
+## Perfil de cliente ideal
+
+O usuário ideal inicial é uma organização de engenharia SaaS de pequeno ou médio porte que:
+
+- Opera múltiplos ambientes.
+- Faz deploy pelo menos algumas vezes por semana.
+- Atende múltiplas organizações clientes ou segmentos de usuários.
+- Já usa flags improvisadas ou configuração remota.
+- Precisa de melhor auditabilidade, mas considera plataformas enterprise caras ou complexas demais.
+- Constrói principalmente sobre Java/Spring ou quer integração neutra de fornecedor via OpenFeature.
+
+## Personas e trabalhos a serem feitos
+
+| Persona | Trabalho a ser feito |
+|---|---|
+| Pessoa desenvolvedora de aplicação | Fazer merge e deploy do código com segurança antes de expô-lo |
+| Pessoa engenheira de plataforma | Oferecer um serviço de flags confiável e padronizado para vários times |
+| SRE/operação | Limitar o raio de impacto e desativar comportamento perigoso rapidamente |
+| Pessoa de QA | Ativar comportamento oculto para validação controlada |
+| Pessoa de produto | Coordenar disponibilidade em etapas sem agendar deploys |
+| Pessoa de suporte | Explicar a configuração efetiva para um cliente específico |
+| Segurança/auditoria | Verificar quem alterou o comportamento em produção e se houve aprovação |
+
+## Proposta de valor
+
+Para times de software que lançam com frequência, o FlagForge é uma plataforma de entrega progressiva que torna mudanças em tempo de execução graduais, explicáveis e reversíveis. Diferentemente de flags improvisadas, ele oferece avaliação determinística, versões imutáveis, governança ciente de tenants e um caminho de integração neutro de fornecedor.
+
+## Hipótese de diferenciação
+
+O FlagForge não vai competir alegando a maior lista de funcionalidades. Sua diferenciação de portfólio e de produto é:
+
+- Integração nativa com OpenFeature, em vez de um SDK exclusivamente proprietário.
+- Experiência de desenvolvimento com Java/Spring em primeiro lugar.
+- Um Evaluation Playground que expõe o rastro completo da decisão.
+- Arquitetura amigável tanto a SaaS quanto a self-hosted.
+- Recursos de governança que permanecem compreensíveis para times menores.
+- Semântica explícita de consistência, defasagem e falha.
+
+## Medidas de sucesso
+
+As medições são definidas com um ambiente reprodutível antes que metas numéricas sejam assumidas. A plataforma deve acompanhar:
+
+- Percentis de latência de avaliação.
+- Taxas de acerto de cache por camada.
+- Atraso de propagação de configuração.
+- Avaliações defasadas ou em fallback.
+- Ações de pausa e rollback de rollout.
+- Idade das flags e limpeza atrasada.
+- Falhas de publicação e conflitos de concorrência otimista.
+
+## Não objetivos
+
+O produto inicial não vai:
+
+- Substituir autenticação, autorização, entitlements ou regras de negócio permanentes.
+- Fornecer uma plataforma completa de experimentação estatística.
+- Suportar todos os ecossistemas de SDK no lançamento.
+- Garantir consistência forte global em escala arbitrária.
+- Armazenar a configuração autoritativa apenas no Redis.
+- Começar como uma frota de microsserviços.
+- Usar aprendizado de máquina para decidir a alocação de rollout.
+
+## Riscos de produto
+
+| Risco | Mitigação |
+|---|---|
+| Virar um clone de CRUD | Priorizar semântica de avaliação, segurança de publicação e comportamento de falha |
+| Dívida de flags | Propriedade, expiração, fluxos de arquivamento e métricas de idade |
+| Exposição de dados entre tenants | Contexto de tenant derivado da autenticação, constraints, autorização e testes adversariais |
+| Configuração defasada | Snapshots versionados, defasagem limitada, invalidação somada à reconciliação |
+| Excesso de engenharia | Entregar fatias verticais e exigir evidência antes de extrair serviços |
+| Aprisionamento a fornecedor | Provider OpenFeature e modelo de configuração exportável |
+
+</details>

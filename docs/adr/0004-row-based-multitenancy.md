@@ -27,3 +27,39 @@ PostgreSQL row-level security may be evaluated later as defense in depth, not as
 - Shared physical resources require quotas and noisy-neighbor controls.
 - Isolation depends on multiple tested application safeguards.
 
+
+---
+
+<details>
+<summary><strong>🇧🇷 Português (pt-BR)</strong></summary>
+
+# ADR 0004: Usar isolamento de tenant por linha inicialmente
+
+- Status: Aceito
+- Data: 2026-07-14
+
+## Contexto
+
+O isolamento por schema para cada tenant acrescenta complexidade de provisionamento, migração, pool de conexões e operação que não se justifica para o mercado-alvo inicial. Ainda assim, a plataforma exige proteção forte contra acesso entre tenants.
+
+## Decisão
+
+Armazenar tenants em tabelas compartilhadas, com um identificador explícito de organização nos registros pertencentes ao tenant. Derivar o contexto do tenant de credenciais autenticadas, incluir as fronteiras de tenant em consultas e constraints e adicionar testes adversariais de isolamento para todo caminho público de recurso.
+
+O row-level security do PostgreSQL pode ser avaliado depois como defesa em profundidade, e não como substituto da autorização na aplicação.
+
+## Consequências
+
+### Positivas
+
+- Migrações simples e desenvolvimento local facilitado.
+- Conexões agrupadas eficientes.
+- Métricas operacionais entre tenants mais fáceis, sem expor dados de tenant.
+
+### Negativas
+
+- A ausência de predicados de tenant pode ser perigosa.
+- Recursos físicos compartilhados exigem cotas e controles de vizinho barulhento.
+- O isolamento depende de várias salvaguardas testadas na aplicação.
+
+</details>

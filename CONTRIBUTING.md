@@ -57,3 +57,69 @@ chore: configure Java toolchain
 
 Do not open public issues for vulnerabilities. Follow [SECURITY.md](SECURITY.md).
 
+
+---
+
+<details>
+<summary><strong>🇧🇷 Português (pt-BR)</strong></summary>
+
+# Como contribuir com o FlagForge
+
+O FlagForge é atualmente um projeto de portfólio conduzido pela arquitetura. As contribuições devem preservar sua ênfase em invariantes de domínio explícitos, isolamento entre tenants, evidência reprodutível e complexidade conquistada.
+
+## Antes de abrir uma mudança
+
+- Pesquise issues e ADRs existentes.
+- Use uma issue para mudanças de comportamento ou trabalho arquitetural.
+- Proponha um ADR quando a mudança afetar fronteiras de módulo, consistência, segurança, propriedade da persistência, contratos públicos ou semântica de falha.
+- Mantenha cada pull request focado em um único resultado coerente.
+
+## Fluxo de desenvolvimento
+
+Os comandos executáveis do projeto serão documentados junto com a implementação da fundação M0. Até lá, não adicione instruções especulativas de configuração.
+
+Assim que o build existir, espera-se que todo pull request execute:
+
+- Formatação e análise estática.
+- Testes unitários e de módulo.
+- Verificação de arquitetura.
+- Testes de integração relevantes à mudança.
+
+## Expectativas para o pull request
+
+Descreva:
+
+- O problema que está sendo resolvido.
+- O comportamento visível ao usuário e o comportamento operacional.
+- Invariantes adicionados ou afetados.
+- Comportamento de falha e de fallback.
+- Testes e evidências.
+- Impacto em segurança, isolamento entre tenants e observabilidade.
+- Mudanças de documentação ou ADR.
+
+## Estilo de commit
+
+Use commits claros e no imperativo. Prefixos convencionais são incentivados:
+
+```text
+feat: add deterministic rollout allocation
+fix: prevent stale version pointer regression
+test: cover cross-tenant segment lookup
+docs: record snapshot versioning decision
+chore: configure Java toolchain
+```
+
+## Regras de design
+
+- O PostgreSQL permanece autoritativo.
+- Nenhum acesso direto ao pacote interno ou às tabelas de outro módulo.
+- Não adicione infraestrutura distribuída sem um caso de uso e um teste de falha.
+- Não use feature flags como autorização.
+- Não registre em log credenciais ou contextos de segmentação completos.
+- Toda consulta a recurso pertencente a um tenant deve comprovar sua fronteira de tenant.
+
+## Relatando problemas de segurança
+
+Não abra issues públicas para vulnerabilidades. Siga o [SECURITY.md](SECURITY.md).
+
+</details>

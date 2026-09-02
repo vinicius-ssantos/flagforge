@@ -285,3 +285,298 @@ docker compose up -d --wait postgres
 ## License
 
 FlagForge is available under the [MIT License](LICENSE).
+
+---
+
+<details>
+<summary><strong>🇧🇷 Português (pt-BR)</strong></summary>
+
+# FlagForge
+
+**Entrega progressiva nativa em OpenFeature para lançamentos de funcionalidades seguros, explicáveis e de baixa latência.**
+
+> Status: fundação M0 em andamento. A primeira aplicação Spring Boot executável e o build Maven reprodutível já estão disponíveis.
+
+O FlagForge é uma plataforma multi-tenant que ajuda times de software a desacoplar deploy de lançamento. Os times podem enviar código protegido por feature flags, direcionar usuários ou organizações específicas, executar rollouts percentuais determinísticos, entender cada decisão de avaliação e interromper um lançamento arriscado sem fazer um novo deploy da aplicação.
+
+## Por que o FlagForge?
+
+Fazer deploy de código e expô-lo a todos os clientes de uma vez cria risco desnecessário. Os times costumam compensar isso com variáveis de ambiente, chaves no banco de dados, planilhas ou endpoints de configuração improvisados. Essas abordagens ficam difíceis de auditar, lentas para propagar e perigosas conforme cresce o número de serviços, ambientes e times.
+
+O FlagForge resolve quatro problemas concretos:
+
+- **Segurança de lançamento:** expor uma funcionalidade gradualmente e reduzir seu raio de impacto.
+- **Controle operacional:** desativar comportamento problemático sem um novo deploy.
+- **Visibilidade da decisão:** explicar exatamente por que um sujeito recebeu determinada variante.
+- **Governança:** versionar, aprovar, auditar, comparar e reverter mudanças em produção.
+
+## Para quem é?
+
+O FlagForge foi projetado para times de engenharia, plataforma, SRE, QA e produto que fazem deploy com frequência e precisam de mais controle do que a configuração estática oferece. Seu perfil de cliente ideal inicial é um time de SaaS de pequeno ou médio porte com múltiplos ambientes, múltiplas organizações clientes e feature flags atualmente mantidas internamente.
+
+Ele intencionalmente não é otimizado para sites estáticos, projetos individuais com lançamentos raros ou regras de autorização. Feature flags não devem substituir controle de acesso nem regra de negócio permanente.
+
+## Princípios do produto
+
+1. **O PostgreSQL é a fonte da verdade.** Caches aceleram a avaliação, mas nunca se tornam autoritativos.
+2. **A configuração publicada é imutável.** Toda publicação produz um snapshot completo e versionado.
+3. **A avaliação é determinística.** A mesma versão de flag e o mesmo contexto de avaliação produzem o mesmo resultado.
+4. **O isolamento entre tenants é obrigatório.** A identidade do tenant vem do contexto autenticado, nunca apenas de um campo não confiável da requisição.
+5. **Falhas são explícitas.** SDKs e APIs informam se um resultado veio de uma regra, de um rollout, do padrão, de um snapshot desatualizado ou de um fallback de erro.
+6. **Complexidade precisa ser conquistada.** O projeto começa como um monólito modular e evolui somente quando uma restrição medida justifica isso.
+7. **Interoperabilidade importa.** A experiência pública de avaliação tem como alvo a compatibilidade com OpenFeature.
+
+## Capacidades principais
+
+### Escopo inicial do produto
+
+- Organizações, membros, projetos e ambientes.
+- Controle de acesso baseado em papéis e chaves de API com escopo de ambiente.
+- Flags booleanas e multivariadas tipadas.
+- Regras de segmentação ordenadas e segmentos reutilizáveis.
+- Rollouts percentuais determinísticos.
+- Rascunho, validação, publicação e histórico imutável de revisões.
+- Razões de avaliação e um Evaluation Playground visual.
+- Log de auditoria e rollback seguro.
+- SDK Java e provider OpenFeature.
+
+### Evolução posterior
+
+- Fluxos de aprovação para ambientes protegidos.
+- Cache multinível com Caffeine e Redis.
+- Invalidação por push em regime de melhor esforço, somada à reconciliação de versões.
+- Rollouts progressivos agendados com controles de pausa e rollback.
+- Eventos de exposição e métricas operacionais de rollout.
+- SDK TypeScript e fluxos de configuração como código.
+
+## Exemplo
+
+Um time faz deploy de um novo checkout mantendo-o desabilitado por padrão:
+
+```text
+Flag: checkout-v2
+Ambiente: production
+
+1. Usuários internos                      -> habilitado
+2. country = BR AND plan = premium        -> rollout de 30%
+3. Todo o restante                        -> desabilitado
+```
+
+Para uma avaliação específica, o FlagForge retorna tanto o valor quanto sua razão:
+
+```json
+{
+  "flagKey": "checkout-v2",
+  "value": true,
+  "variant": "checkout-b",
+  "reason": "TARGETING_MATCH",
+  "matchedRule": "premium-users-brazil",
+  "bucket": 14,
+  "configurationVersion": 87
+}
+```
+
+## Direção arquitetural
+
+O FlagForge separa logicamente duas cargas de trabalho desde o início, sem forçar microsserviços prematuros:
+
+- **Plano de Controle (Control Plane):** tenants, projetos, flags, regras, publicação, governança e auditoria.
+- **Plano de Avaliação (Evaluation Plane):** avaliação de baixa latência sobre snapshots publicados completos.
+
+```mermaid
+flowchart LR
+    UI["Console Web"] --> CP["Plano de Controle"]
+    CP --> PG[("PostgreSQL")]
+    CP --> OB["Outbox Transacional"]
+    OB --> DIST["Distribuição de Mudanças"]
+    DIST --> EP["Plano de Avaliação"]
+    EP --> L1["Caffeine L1"]
+    EP --> L2[("Redis L2")]
+    SDK["Clientes OpenFeature / SDK"] --> EP
+```
+
+A primeira versão executável pode rodar ambos os planos em uma única aplicação Spring Boot. As fronteiras de módulo e os contratos tornam possível um deploy independente mais adiante, caso tráfego, disponibilidade ou cadência de lançamento justifiquem.
+
+Consulte [Arquitetura](docs/ARCHITECTURE.md), [Modelo de Domínio](docs/DOMAIN_MODEL.md), o [modelo de ameaças inicial](docs/THREAT_MODEL.md) e o [índice de ADRs](docs/adr/README.md) para o raciocínio completo.
+
+## Invariantes centrais
+
+- Uma chave de flag é única dentro de um projeto.
+- Uma revisão publicada é imutável.
+- Um avaliador nunca observa uma configuração publicada parcialmente.
+- O mesmo sujeito permanece no mesmo bucket de rollout para a mesma flag e o mesmo algoritmo de alocação.
+- Aumentar o percentual de rollout preserva os sujeitos já incluídos no rollout.
+- Um tenant não pode ler, alterar, avaliar ou inferir recursos de outro tenant.
+- A publicação em produção usa concorrência otimista para impedir sobrescritas silenciosas.
+- O rollback cria uma nova revisão; ele nunca reescreve o histórico.
+- Caches podem ficar desatualizados dentro de um orçamento declarado, mas não podem inventar nem mesclar revisões parcialmente.
+- Pré-requisitos cíclicos entre flags são rejeitados antes da publicação.
+
+## Estratégia de tecnologia
+
+A stack alvo é deliberadamente moderna, porém conservadora:
+
+| Área | Direção |
+|---|---|
+| Backend | Java 25, Spring Boot 4.1, Spring Modulith |
+| Persistência | PostgreSQL, Flyway, Spring Data JDBC/JPA após um spike de persistência |
+| Cache | Caffeine L1; Redis L2 somente depois que o avaliador de nó único estiver correto |
+| Frontend | Next.js, TypeScript, sistema de componentes acessível |
+| Interoperabilidade | Provider Java compatível com OpenFeature |
+| API | REST/OpenAPI; SSE ou polling para atualizações de configuração |
+| Testes | JUnit 5, Testcontainers, ArchUnit, testes baseados em propriedades e de concorrência |
+| Observabilidade | Micrometer, OpenTelemetry, métricas compatíveis com Prometheus |
+| Entrega | Maven, Docker Compose, GitHub Actions |
+
+As escolhas de tecnologia continuam sujeitas a ADRs e spikes executáveis. Nenhum componente é incluído apenas para aumentar a contagem da stack.
+
+## Estrutura planejada do repositório
+
+```text
+flagforge/
+├── apps/
+│   ├── control-api/
+│   ├── evaluation-api/
+│   └── web-console/
+├── modules/
+│   ├── identity/
+│   ├── tenancy/
+│   ├── projects/
+│   ├── flags/
+│   ├── targeting/
+│   ├── publishing/
+│   ├── evaluation/
+│   ├── rollout/
+│   ├── audit/
+│   └── distribution/
+├── sdk/
+│   ├── java/
+│   └── typescript/
+├── docs/
+│   └── adr/
+└── infrastructure/
+```
+
+Este é um layout alvo, não um compromisso de criar módulos vazios. Módulos são adicionados com fatias verticais funcionais.
+
+## Roadmap de entrega
+
+| Marco | Resultado |
+|---|---|
+| M0 — Fundação | Build, fronteiras de módulo, PostgreSQL local, CI, baseline de segurança e observabilidade |
+| M1 — Avaliador Determinístico | Modelo de tenants, flags, segmentação, rollout percentual, API de avaliação e playground |
+| M2 — Publicação Segura | Revisões imutáveis, concorrência otimista, auditoria, rollback e ambientes protegidos |
+| M3 — Avaliação Distribuída | Caffeine, Redis, outbox, invalidação, reconciliação, SDK Java e provider OpenFeature |
+| M4 — Entrega Progressiva | Planos de rollout agendados, health gates, dashboard ao vivo, benchmarks e demo de portfólio |
+
+O escopo detalhado e os critérios de saída estão em [ROADMAP.md](docs/ROADMAP.md).
+
+## Padrão de qualidade
+
+Uma funcionalidade só está completa quando:
+
+- Seu invariante de domínio está documentado e testado.
+- O isolamento entre tenants está coberto por testes negativos.
+- O comportamento de falha e a semântica de fallback são explícitos.
+- O comportamento da API pública está representado no OpenAPI.
+- Logs, métricas e traces evitam segredos e identificadores de sujeito de alta cardinalidade.
+- As fronteiras arquiteturais permanecem válidas.
+- A documentação reflete o comportamento entregue.
+
+Consulte [TEST_STRATEGY.md](docs/TEST_STRATEGY.md) para a matriz de verificação planejada.
+
+## Status atual
+
+O repositório está em **M0 / Fundação**. Ele contém a especificação do produto, a verificação executável das fronteiras de módulo, a aplicação Control API, o baseline de persistência PostgreSQL/Flyway, o quality gate de CI e os padrões iniciais de segurança e observabilidade. A próxima fatia de entrega inicia a hierarquia de tenants e o modelo de isolamento.
+
+## Início rápido
+
+### Requisitos
+
+- JDK 25.
+- Docker Engine ou Docker Desktop com Docker Compose.
+- Nenhuma instalação de Maven no sistema é necessária. O wrapper baixa o Maven 3.9.11.
+- As credenciais de banco versionadas são intencionalmente padrões apenas locais e não devem ser reutilizadas em outro ambiente.
+
+### Verificar o build
+
+O Docker precisa estar em execução. O Testcontainers sobe uma instância isolada do PostgreSQL 17.10 e verifica a inicialização da aplicação, o histórico do Flyway e a validação das migrações.
+
+Linux/macOS:
+
+```bash
+sh ./mvnw --batch-mode verify
+```
+
+Windows:
+
+```powershell
+.\mvnw.cmd --batch-mode verify
+```
+
+### Subir o PostgreSQL local
+
+```bash
+docker compose up -d --wait postgres
+```
+
+Os padrões podem ser sobrescritos com `FLAGFORGE_DB_NAME`, `FLAGFORGE_DB_USER`, `FLAGFORGE_DB_PASSWORD` e `FLAGFORGE_DB_PORT`.
+
+### Executar a Control API
+
+Linux/macOS:
+
+```bash
+sh ./mvnw --projects apps/control-api spring-boot:run
+```
+
+Windows:
+
+```powershell
+.\mvnw.cmd --projects apps/control-api spring-boot:run
+```
+
+Os endpoints operacionais públicos iniciais são:
+
+```text
+GET http://localhost:8080/actuator/health
+GET http://localhost:8080/actuator/health/liveness
+GET http://localhost:8080/actuator/health/readiness
+GET http://localhost:8080/actuator/info
+GET http://localhost:8080/livez
+GET http://localhost:8080/readyz
+```
+
+Todas as rotas da aplicação são negadas por padrão até que a fatia de autenticação e RBAC seja entregue. As respostas de health nunca expõem detalhes de componentes. O readiness inclui o PostgreSQL; o liveness não.
+
+Os logs estruturados em ECS incluem um `X-Correlation-ID` validado ou gerado. A integração com OpenTelemetry está disponível, enquanto a exportação de traces via OTLP fica desabilitada por padrão. Ela pode ser habilitada explicitamente com `FLAGFORGE_OTEL_EXPORT_ENABLED=true` e configurada por `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`. A amostragem é controlada por `FLAGFORGE_TRACING_SAMPLING_PROBABILITY`.
+
+Parar o banco local preservando seu volume:
+
+```bash
+docker compose down
+```
+
+Remover e recriar todo o estado local do banco:
+
+```bash
+docker compose down --volumes
+docker compose up -d --wait postgres
+```
+
+## Documentação
+
+- [Visão de produto e usuários-alvo](docs/VISION.md)
+- [Arquitetura](docs/ARCHITECTURE.md)
+- [Modelo de domínio e semântica de avaliação](docs/DOMAIN_MODEL.md)
+- [Roadmap e critérios de saída dos marcos](docs/ROADMAP.md)
+- [Estratégia de testes](docs/TEST_STRATEGY.md)
+- [Política de segurança](SECURITY.md)
+- [Architecture Decision Records](docs/adr/README.md)
+- [Como contribuir](CONTRIBUTING.md)
+
+## Licença
+
+O FlagForge está disponível sob a [Licença MIT](LICENSE).
+
+</details>

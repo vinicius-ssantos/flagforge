@@ -159,3 +159,175 @@ The integration suite proves:
 - audit rows reject update and deletion;
 - audit-read authorization differs from configuration-write authorization;
 - credential audit details contain no plaintext, hash, key prefix, or name.
+
+---
+
+<details>
+<summary><strong>🇧🇷 Português (pt-BR)</strong></summary>
+
+# Auditoria somente-acréscimo, diff de revisões e rollback
+
+O FlagForge trata toda configuração publicada como evidência imutável. O histórico
+de auditoria, a comparação de revisões e o rollback operam sobre essa evidência sem
+reescrever nem excluir um estado anterior.
+
+## Trilha de auditoria somente-acréscimo
+
+A tabela `audit_events` registra metadados limitados de ação para mudanças no plano
+de controle. Cada evento contém:
+
+- escopo de organização, projeto opcional e ambiente opcional;
+- identificador do ator;
+- ação estável e tipo de recurso;
+- identificador do recurso;
+- identidade e número de revisão imutável opcionais;
+- identificador de correlação;
+- detalhes JSON limitados;
+- timestamp de ocorrência.
+
+O PostgreSQL rejeita operações de `UPDATE` e `DELETE` por meio da mesma guarda de
+mutação imutável usada pelo histórico de revisões publicadas. Os serviços da aplicação
+expõem apenas operações de acréscimo e de leitura.
+
+A inserção de auditoria usa propagação de transação `MANDATORY`. Um evento de flag,
+credencial, publicação ou rollback, portanto, é confirmado ou revertido junto com a
+mudança de estado correspondente. Uma publicação malsucedida não pode deixar para trás
+um evento de auditoria, evento de outbox, snapshot ou revisão parcial.
+
+## Fronteira de dados sensíveis
+
+Os detalhes de auditoria aceitam apenas um mapa pequeno e limitado de metadados
+textuais. Chaves que sugiram segredos, senhas, credenciais em texto plano, tokens,
+chaves de segmentação, contextos de avaliação ou atributos de usuário são rejeitadas
+antes da persistência.
+
+Eventos de credencial contêm identificadores, escopo e transições de status. Eles não
+contêm:
+
+- texto plano de credencial de SDK;
+- hashes de segredo persistidos;
+- prefixos de chave;
+- nomes de credencial;
+- contextos de avaliação de requisições.
+
+Eventos de auditoria de configuração contêm a proveniência da revisão e checksums, e
+não uma cópia do payload serializado completo.
+
+## Ações auditadas
+
+A fatia atual registra:
+
+- criação e arquivamento de feature flag;
+- criação, rotação e revogação de credencial de SDK;
+- publicação normal de configuração;
+- rollback de configuração.
+
+O schema reserva ações estáveis para o ciclo de vida de revisão introduzido pela issue
+#17: criação, submissão, aprovação, rejeição e publicação de solicitação de mudança.
+Esta issue não afirma que tal fluxo já esteja implementado.
+
+## Autorização
+
+Auditoria e histórico de revisões exigem a permissão dedicada `AUDIT_READ`.
+
+- OWNER, ADMIN e VIEWER podem inspecionar auditoria e histórico de revisões.
+- DEVELOPER não pode inspecionar a trilha de auditoria.
+- O rollback continua exigindo `ENVIRONMENT_WRITE`.
+
+A identidade do tenant vem do principal autenticado. IDs de organização não são aceitos
+no corpo da requisição, e toda busca de ambiente e de revisão tem escopo de organização,
+projeto e ambiente.
+
+## Histórico de revisões
+
+Todo resumo de revisão expõe:
+
+- ID da revisão e número monotonicamente crescente;
+- tipo da revisão: `PUBLISH` ou `ROLLBACK`;
+- revisão de origem do rollback, quando aplicável;
+- versões do schema e do algoritmo de avaliação;
+- checksum e tamanho do payload;
+- ator que publicou, ID de correlação e timestamp;
+- se a revisão está atualmente efetiva.
+
+O histórico é ordenado do mais novo para o mais antigo e lê apenas metadados imutáveis
+de snapshot.
+
+## Diff determinístico de configuração
+
+A comparação carrega dois payloads imutáveis exatos, verifica seus checksums e
+identidades e os achata em caminhos estáveis de configuração. O diff inclui:
+
+- estado de habilitação, tipo e variante padrão da flag;
+- variantes tipadas e valores;
+- pré-requisitos;
+- regras de segmentação, prioridades, variantes e condições;
+- inclusões, exclusões e condições de segmento.
+
+Os caminhos são ordenados, as representações de condição são canônicas e toda diferença
+é classificada como `ADDED`, `REMOVED` ou `CHANGED`. O diff nunca consulta tabelas
+mutáveis de rascunho.
+
+## Invariante de rollback
+
+O rollback nunca aponta diretamente para uma revisão antiga e nunca edita o histórico.
+Ele executa uma nova transação de publicação:
+
+1. autorizar o acesso de escrita ao ambiente;
+2. travar o ambiente e verificar `expectedVersion`;
+3. carregar o snapshot antigo selecionado dentro do mesmo ambiente do tenant;
+4. verificar checksum e identidade embutida;
+5. construir um novo snapshot com um novo número de revisão;
+6. inserir uma nova revisão marcada como `ROLLBACK` e vincular sua revisão de origem;
+7. inserir as linhas de snapshot, evidência de publicação, auditoria generalizada e outbox;
+8. avançar o ponteiro atual com semântica de compare-and-set.
+
+O comportamento restaurado pode coincidir com o de uma revisão anterior, mas seu ID de
+revisão, número de revisão, checksum, versão de publicação, evento de auditoria e evento
+de outbox são novos.
+
+## API HTTP
+
+```http
+GET /api/v1/environments/{environmentId}/audit?limit=100
+```
+
+```http
+GET /api/v1/environments/{environmentId}/revisions?limit=100
+```
+
+```http
+GET /api/v1/environments/{environmentId}/revisions/diff?fromRevision=1&toRevision=2
+```
+
+```http
+POST /api/v1/environments/{environmentId}/rollback
+Content-Type: application/json
+
+{
+  "sourceRevisionNumber": 1,
+  "expectedVersion": 2
+}
+```
+
+Um rollback defasado recebe o mesmo contrato de `409 Conflict` de versão de publicação
+que uma publicação normal.
+
+## Verificação
+
+A suíte de integração comprova que:
+
+- as migrações V1 até V7 aplicam e validam a partir de um banco PostgreSQL vazio;
+- a publicação e a auditoria generalizada persistem atomicamente;
+- uma publicação malsucedida deixa inalteradas as contagens de ponteiro, histórico,
+  auditoria, snapshot e outbox;
+- o diff determinístico reporta valores exatos de antes/depois;
+- o rollback cria uma terceira revisão a partir da revisão um, preservando as revisões
+  um e dois;
+- o avaliador usa a nova revisão de rollback;
+- as linhas de auditoria rejeitam atualização e exclusão;
+- a autorização de leitura de auditoria difere da autorização de escrita de configuração;
+- os detalhes de auditoria de credencial não contêm texto plano, hash, prefixo de chave
+  nem nome.
+
+</details>
