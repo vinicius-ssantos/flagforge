@@ -2,7 +2,17 @@
 
 The roadmap is organized around demonstrable outcomes rather than infrastructure layers. Each milestone ends with a vertical scenario that can be exercised from the UI or API.
 
+| Milestone | Status |
+|---|---|
+| M0 — Foundation | Delivered |
+| M1 — Deterministic Evaluator | Delivered |
+| M2 — Safe Publishing | Delivered |
+| M3 — Distributed Evaluation | Not started |
+| M4 — Progressive Delivery | Not started |
+
 ## M0 — Foundation
+
+- Status: Delivered.
 
 ### Outcome
 
@@ -28,6 +38,8 @@ A reproducible Java project with enforced modular boundaries and a production-mi
 
 ## M1 — Deterministic Evaluator
 
+- Status: Delivered.
+
 ### Outcome
 
 An authenticated tenant can define a boolean feature flag and evaluate it using ordered rules and stable percentage rollout.
@@ -52,6 +64,8 @@ An authenticated tenant can define a boolean feature flag and evaluate it using 
 
 ## M2 — Safe Publishing
 
+- Status: Delivered.
+
 ### Outcome
 
 Teams edit drafts and publish complete immutable revisions without silent concurrent overwrites.
@@ -74,6 +88,8 @@ Teams edit drafts and publish complete immutable revisions without silent concur
 - Production policy failures return actionable errors.
 
 ## M3 — Distributed Evaluation
+
+- Status: Not started.
 
 ### Outcome
 
@@ -99,6 +115,8 @@ Replicated evaluators serve versioned snapshots efficiently and recover from mis
 - The Java SDK passes shared evaluation conformance vectors.
 
 ## M4 — Progressive Delivery
+
+- Status: Not started.
 
 ### Outcome
 
@@ -143,7 +161,17 @@ Deferred work is not part of the initial portfolio completion criteria.
 
 O roadmap é organizado em torno de resultados demonstráveis, e não de camadas de infraestrutura. Cada marco termina com um cenário vertical que pode ser exercitado pela UI ou pela API.
 
+| Marco | Status |
+|---|---|
+| M0 — Fundação | Entregue |
+| M1 — Avaliador Determinístico | Entregue |
+| M2 — Publicação Segura | Entregue |
+| M3 — Avaliação Distribuída | Não iniciado |
+| M4 — Entrega Progressiva | Não iniciado |
+
 ## M0 — Fundação
+
+- Status: Entregue.
 
 ### Resultado
 
@@ -169,6 +197,8 @@ Um projeto Java reprodutível, com fronteiras modulares impostas por verificaç�
 
 ## M1 — Avaliador Determinístico
 
+- Status: Entregue.
+
 ### Resultado
 
 Um tenant autenticado consegue definir uma feature flag booleana e avaliá-la usando regras ordenadas e rollout percentual estável.
@@ -193,6 +223,8 @@ Um tenant autenticado consegue definir uma feature flag booleana e avaliá-la us
 
 ## M2 — Publicação Segura
 
+- Status: Entregue.
+
 ### Resultado
 
 Os times editam rascunhos e publicam revisões imutáveis completas, sem sobrescritas concorrentes silenciosas.
@@ -215,6 +247,8 @@ Os times editam rascunhos e publicam revisões imutáveis completas, sem sobresc
 - Falhas de política de produção retornam erros acionáveis.
 
 ## M3 — Avaliação Distribuída
+
+- Status: Não iniciado.
 
 ### Resultado
 
@@ -240,6 +274,8 @@ Avaliadores replicados servem snapshots versionados de forma eficiente e se recu
 - O SDK Java passa nos vetores compartilhados de conformidade de avaliação.
 
 ## M4 — Entrega Progressiva
+
+- Status: Não iniciado.
 
 ### Resultado
 

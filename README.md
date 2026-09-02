@@ -2,7 +2,7 @@
 
 **OpenFeature-native progressive delivery for safe, explainable, and low-latency feature releases.**
 
-> Status: M0 foundation in progress. The first executable Spring Boot application and reproducible Maven build are available.
+> Status: M0 through M2 delivered. The deterministic evaluator, immutable publication, append-only audit, rollback, and protected-environment approvals are executable. M3 — distributed evaluation — has not started.
 
 FlagForge is a multi-tenant platform that helps software teams decouple deployment from release. Teams can ship code behind feature flags, target selected users or organizations, perform deterministic percentage rollouts, understand every evaluation decision, and stop a risky release without redeploying an application.
 
@@ -168,13 +168,13 @@ This is a target layout, not a commitment to create empty modules. Modules are a
 
 ## Delivery roadmap
 
-| Milestone | Outcome |
-|---|---|
-| M0 — Foundation | Build, module boundaries, local PostgreSQL, CI, security and observability baseline |
-| M1 — Deterministic Evaluator | Tenant model, flags, targeting, percentage rollout, evaluation API and playground |
-| M2 — Safe Publishing | Immutable revisions, optimistic concurrency, audit, rollback and protected environments |
-| M3 — Distributed Evaluation | Caffeine, Redis, outbox, invalidation, reconciliation, Java SDK and OpenFeature provider |
-| M4 — Progressive Delivery | Scheduled rollout plans, health gates, live dashboard, benchmarks and portfolio demo |
+| Milestone | Outcome | Status |
+|---|---|---|
+| M0 — Foundation | Build, module boundaries, local PostgreSQL, CI, security and observability baseline | Delivered |
+| M1 — Deterministic Evaluator | Tenant model, flags, targeting, percentage rollout, evaluation API and playground | Delivered |
+| M2 — Safe Publishing | Immutable revisions, optimistic concurrency, audit, rollback and protected environments | Delivered |
+| M3 — Distributed Evaluation | Caffeine, Redis, outbox, invalidation, reconciliation, Java SDK and OpenFeature provider | Not started |
+| M4 — Progressive Delivery | Scheduled rollout plans, health gates, live dashboard, benchmarks and portfolio demo | Not started |
 
 The detailed scope and exit criteria are in [ROADMAP.md](docs/ROADMAP.md).
 
@@ -194,7 +194,13 @@ See [TEST_STRATEGY.md](docs/TEST_STRATEGY.md) for the planned verification matri
 
 ## Current status
 
-The repository is in **M0 / Foundation**. It contains the product specification, executable module-boundary verification, the Control API application, the PostgreSQL/Flyway persistence baseline, the CI quality gate, and initial security and observability defaults. The next delivery slice begins the tenant hierarchy and isolation model.
+**M0 — Foundation**, **M1 — Deterministic Evaluator**, and **M2 — Safe Publishing** are complete.
+
+Delivered and covered by tests: executable module-boundary verification, the Control API application, the PostgreSQL/Flyway persistence baseline, the CI quality gate, security and observability defaults, the tenant hierarchy with row-based isolation, RBAC and environment-scoped SDK credentials, typed flags and variants, the ordered targeting and prerequisite engine, deterministic rollout allocation with conformance vectors, the evaluation API and its reason model, the web console foundation and Evaluation Playground, immutable snapshot publication with optimistic concurrency, append-only audit, deterministic configuration diff, rollback, and protected-environment change requests.
+
+**M3 — Distributed Evaluation** has not started. Publication already writes transactional outbox rows, but they stay `PENDING` because no relay consumes them yet (#18). Caffeine and Redis caching (#19), the Java SDK and OpenFeature provider (#20), and reproducible benchmarks (#21) remain open.
+
+One gap belongs to no milestone. The Control API has no human authentication mechanism and no HTTP endpoints for creating organizations, projects, environments, flags, or SDK credentials. Control-plane routes require an authenticated principal, but no configured login path can produce one, so an operator cannot yet administer the platform over HTTP. Evaluation is reachable today only with an SDK credential created through the service layer.
 
 ## Quick start
 
@@ -295,7 +301,7 @@ FlagForge is available under the [MIT License](LICENSE).
 
 **Entrega progressiva nativa em OpenFeature para lançamentos de funcionalidades seguros, explicáveis e de baixa latência.**
 
-> Status: fundação M0 em andamento. A primeira aplicação Spring Boot executável e o build Maven reprodutível já estão disponíveis.
+> Status: M0 até M2 entregues. O avaliador determinístico, a publicação imutável, a auditoria somente-acréscimo, o rollback e as aprovações em ambiente protegido estão executáveis. O M3 — avaliação distribuída — ainda não começou.
 
 O FlagForge é uma plataforma multi-tenant que ajuda times de software a desacoplar deploy de lançamento. Os times podem enviar código protegido por feature flags, direcionar usuários ou organizações específicas, executar rollouts percentuais determinísticos, entender cada decisão de avaliação e interromper um lançamento arriscado sem fazer um novo deploy da aplicação.
 
@@ -461,13 +467,13 @@ Este é um layout alvo, não um compromisso de criar módulos vazios. Módulos s
 
 ## Roadmap de entrega
 
-| Marco | Resultado |
-|---|---|
-| M0 — Fundação | Build, fronteiras de módulo, PostgreSQL local, CI, baseline de segurança e observabilidade |
-| M1 — Avaliador Determinístico | Modelo de tenants, flags, segmentação, rollout percentual, API de avaliação e playground |
-| M2 — Publicação Segura | Revisões imutáveis, concorrência otimista, auditoria, rollback e ambientes protegidos |
-| M3 — Avaliação Distribuída | Caffeine, Redis, outbox, invalidação, reconciliação, SDK Java e provider OpenFeature |
-| M4 — Entrega Progressiva | Planos de rollout agendados, health gates, dashboard ao vivo, benchmarks e demo de portfólio |
+| Marco | Resultado | Status |
+|---|---|---|
+| M0 — Fundação | Build, fronteiras de módulo, PostgreSQL local, CI, baseline de segurança e observabilidade | Entregue |
+| M1 — Avaliador Determinístico | Modelo de tenants, flags, segmentação, rollout percentual, API de avaliação e playground | Entregue |
+| M2 — Publicação Segura | Revisões imutáveis, concorrência otimista, auditoria, rollback e ambientes protegidos | Entregue |
+| M3 — Avaliação Distribuída | Caffeine, Redis, outbox, invalidação, reconciliação, SDK Java e provider OpenFeature | Não iniciado |
+| M4 — Entrega Progressiva | Planos de rollout agendados, health gates, dashboard ao vivo, benchmarks e demo de portfólio | Não iniciado |
 
 O escopo detalhado e os critérios de saída estão em [ROADMAP.md](docs/ROADMAP.md).
 
@@ -487,7 +493,13 @@ Consulte [TEST_STRATEGY.md](docs/TEST_STRATEGY.md) para a matriz de verificaçã
 
 ## Status atual
 
-O repositório está em **M0 / Fundação**. Ele contém a especificação do produto, a verificação executável das fronteiras de módulo, a aplicação Control API, o baseline de persistência PostgreSQL/Flyway, o quality gate de CI e os padrões iniciais de segurança e observabilidade. A próxima fatia de entrega inicia a hierarquia de tenants e o modelo de isolamento.
+**M0 — Fundação**, **M1 — Avaliador Determinístico** e **M2 — Publicação Segura** estão concluídos.
+
+Entregue e coberto por testes: verificação executável das fronteiras de módulo, a aplicação Control API, o baseline de persistência PostgreSQL/Flyway, o quality gate de CI, os padrões de segurança e observabilidade, a hierarquia de tenants com isolamento por linha, RBAC e credenciais de SDK com escopo de ambiente, flags e variantes tipadas, o motor de segmentação ordenada e pré-requisitos, a alocação determinística de rollout com vetores de conformidade, a API de avaliação e seu modelo de razões, a fundação do console web e o Evaluation Playground, a publicação de snapshots imutáveis com concorrência otimista, a auditoria somente-acréscimo, o diff determinístico de configuração, o rollback e as solicitações de mudança em ambiente protegido.
+
+O **M3 — Avaliação Distribuída** ainda não começou. A publicação já grava linhas no outbox transacional, mas elas permanecem em `PENDING` porque nenhum relay as consome ainda (#18). O cache com Caffeine e Redis (#19), o SDK Java e o provider OpenFeature (#20) e os benchmarks reprodutíveis (#21) seguem abertos.
+
+Uma lacuna não pertence a nenhum marco. A Control API não tem mecanismo de autenticação humana nem endpoints HTTP para criar organizações, projetos, ambientes, flags ou credenciais de SDK. As rotas do plano de controle exigem um principal autenticado, mas nenhum caminho de login configurado consegue produzi-lo, de modo que um operador ainda não administra a plataforma por HTTP. Hoje, a avaliação só é alcançável com uma credencial de SDK criada pela camada de serviço.
 
 ## Início rápido
 
