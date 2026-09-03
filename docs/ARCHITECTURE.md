@@ -97,7 +97,7 @@ A snapshot contains the flags, variants, ordered rules, referenced segments, pre
 
 ## Cache and distribution
 
-The cache is introduced only after the evaluator works correctly from PostgreSQL.
+The cache is introduced only after the evaluator works correctly from PostgreSQL. The Caffeine L1 layer, its invalidation and its staleness budget are delivered; Redis L2 and periodic reconciliation are not yet.
 
 ```mermaid
 flowchart LR
@@ -302,7 +302,7 @@ Um snapshot contém as flags, variantes, regras ordenadas, segmentos referenciad
 
 ## Cache e distribuição
 
-O cache só é introduzido depois que o avaliador funciona corretamente a partir do PostgreSQL.
+O cache só é introduzido depois que o avaliador funciona corretamente a partir do PostgreSQL. A camada L1 com Caffeine, sua invalidação e seu orçamento de defasagem estão entregues; o Redis L2 e a reconciliação periódica, ainda não.
 
 ```mermaid
 flowchart LR
