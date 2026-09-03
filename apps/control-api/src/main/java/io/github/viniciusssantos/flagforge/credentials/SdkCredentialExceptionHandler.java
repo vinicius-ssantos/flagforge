@@ -1,9 +1,12 @@
-package io.github.viniciusssantos.flagforge.tenancy;
+package io.github.viniciusssantos.flagforge.credentials;
 
 import java.net.URI;
 
+import io.github.viniciusssantos.flagforge.tenancy.TenantAccessException;
+
 import jakarta.servlet.http.HttpServletRequest;
 
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
@@ -11,22 +14,11 @@ import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
-@RestControllerAdvice(assignableTypes = {
-        OrganizationController.class,
-        ProjectController.class,
-        EnvironmentController.class,
-        MembershipController.class
-})
-final class TenancyExceptionHandler {
+@RestControllerAdvice(assignableTypes = SdkCredentialController.class)
+final class SdkCredentialExceptionHandler {
 
     private static final String CORRELATION_ATTRIBUTE = "flagforge.correlation-id";
 
-    /**
-     * Maps tenant access failures without revealing which resources exist.
-     *
-     * <p>A resource owned by another organization produces the same 404 as one that does not exist,
-     * so a caller cannot enumerate tenants by comparing responses.
-     */
     @ExceptionHandler(TenantAccessException.class)
     ResponseEntity<ProblemDetail> handleTenantAccess(
             TenantAccessException exception,
@@ -56,29 +48,35 @@ final class TenancyExceptionHandler {
         };
     }
 
-    @ExceptionHandler(IllegalArgumentException.class)
-    ResponseEntity<ProblemDetail> handleInvalidArgument(
-            IllegalArgumentException exception,
-            HttpServletRequest request) {
-        return respond(
-                HttpStatus.BAD_REQUEST,
-                "Invalid tenant request",
-                "urn:flagforge:problem:invalid-tenant-request",
-                exception.getMessage(),
-                "INVALID_TENANT_REQUEST",
-                request);
-    }
-
+    /**
+     * Rotating or revoking a credential that is no longer active is a conflict, not a bad request.
+     *
+     * <p>The message is deliberately generic: it must not reveal a credential's state to a caller
+     * that guessed its identifier, and the tenant check has already run before this point.
+     */
     @ExceptionHandler(IllegalStateException.class)
-    ResponseEntity<ProblemDetail> handleConflict(
+    ResponseEntity<ProblemDetail> handleInactiveCredential(
             IllegalStateException exception,
             HttpServletRequest request) {
         return respond(
                 HttpStatus.CONFLICT,
-                "Tenant state conflict",
-                "urn:flagforge:problem:tenant-state-conflict",
-                exception.getMessage(),
-                "TENANT_STATE_CONFLICT",
+                "Credential state conflict",
+                "urn:flagforge:problem:credential-state-conflict",
+                "The credential is not in a state that allows this operation",
+                "CREDENTIAL_STATE_CONFLICT",
+                request);
+    }
+
+    @ExceptionHandler(OptimisticLockingFailureException.class)
+    ResponseEntity<ProblemDetail> handleConcurrentModification(
+            OptimisticLockingFailureException exception,
+            HttpServletRequest request) {
+        return respond(
+                HttpStatus.CONFLICT,
+                "Credential state conflict",
+                "urn:flagforge:problem:credential-state-conflict",
+                "The credential changed concurrently; reload and retry",
+                "CONCURRENT_MODIFICATION",
                 request);
     }
 
@@ -88,10 +86,23 @@ final class TenancyExceptionHandler {
             HttpServletRequest request) {
         return respond(
                 HttpStatus.BAD_REQUEST,
-                "Invalid tenant request",
-                "urn:flagforge:problem:invalid-tenant-request",
+                "Invalid credential request",
+                "urn:flagforge:problem:invalid-credential-request",
                 "Request body is malformed or incomplete",
-                "INVALID_TENANT_REQUEST",
+                "INVALID_CREDENTIAL_REQUEST",
+                request);
+    }
+
+    @ExceptionHandler(IllegalArgumentException.class)
+    ResponseEntity<ProblemDetail> handleInvalidArgument(
+            IllegalArgumentException exception,
+            HttpServletRequest request) {
+        return respond(
+                HttpStatus.BAD_REQUEST,
+                "Invalid credential request",
+                "urn:flagforge:problem:invalid-credential-request",
+                exception.getMessage(),
+                "INVALID_CREDENTIAL_REQUEST",
                 request);
     }
 

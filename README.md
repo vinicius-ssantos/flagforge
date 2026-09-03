@@ -200,7 +200,7 @@ Delivered and covered by tests: executable module-boundary verification, the Con
 
 **M3 — Distributed Evaluation** has not started. Publication already writes transactional outbox rows, but they stay `PENDING` because no relay consumes them yet (#18). Caffeine and Redis caching (#19), the Java SDK and OpenFeature provider (#20), and reproducible benchmarks (#21) remain open.
 
-Operator access (#47) is partly delivered and belongs to no milestone. Human authentication and the organization, project, and environment endpoints exist; feature flag and SDK credential endpoints do not, so those resources still originate in the service layer and the platform is not yet self-sufficient end to end.
+Operator access (#47) is delivered and belongs to no milestone. An operator can authenticate, create an organization, project, environment, and typed feature flag, publish the environment, issue an SDK credential, and evaluate — over HTTP only, which an end-to-end test exercises.
 
 ## Quick start
 
@@ -293,6 +293,34 @@ curl -X POST localhost:8080/api/v1/projects/$PROJECT_ID/environments \
   -H 'Content-Type: application/json' \
   -d '{"key":"production","displayName":"Production"}'
 ```
+
+### Ship a flag and evaluate it
+
+Create a typed flag, publish the environment, issue an SDK credential, and evaluate. The declared `valueType` decides which variant field is read, so a value is never coerced between types:
+
+```bash
+curl -X POST localhost:8080/api/v1/projects/$PROJECT_ID/flags \
+  -H "Authorization: Bearer $TOKEN" -H 'X-FlagForge-Organization: acme' \
+  -H 'Content-Type: application/json' \
+  -d '{"key":"checkout-v2","displayName":"Checkout v2","ownerId":"squad-checkout",
+       "valueType":"BOOLEAN","lifecycleType":"OPERATIONAL","defaultVariantKey":"enabled",
+       "variants":[{"key":"disabled","booleanValue":false},
+                   {"key":"enabled","booleanValue":true}]}'
+
+curl -X POST localhost:8080/api/v1/environments/$ENVIRONMENT_ID/publication \
+  -H "Authorization: Bearer $TOKEN" -H 'X-FlagForge-Organization: acme' \
+  -H 'Content-Type: application/json' -d '{"expectedVersion":0}'
+
+SDK_KEY=$(curl -s -X POST localhost:8080/api/v1/environments/$ENVIRONMENT_ID/sdk-credentials \
+  -H "Authorization: Bearer $TOKEN" -H 'X-FlagForge-Organization: acme' \
+  -H 'Content-Type: application/json' -d '{"name":"production-server"}' | jq -r .plaintext)
+
+curl -X POST localhost:8080/api/v1/evaluate/checkout-v2 \
+  -H "Authorization: Bearer $SDK_KEY" -H 'Content-Type: application/json' \
+  -d '{"type":"BOOLEAN","defaultValue":false,"targetingKey":"customer-492"}'
+```
+
+The SDK credential plaintext is returned on creation and rotation only; the database keeps a hash. Lose it and you rotate rather than read it back.
 
 The `dev` profile signs a token for any actor asked for, so it exists only under that profile and must never be enabled in a deployed environment. The contract is in [`docs/openapi/control-api.yaml`](docs/openapi/control-api.yaml).
 
@@ -533,7 +561,7 @@ Entregue e coberto por testes: verificação executável das fronteiras de módu
 
 O **M3 — Avaliação Distribuída** ainda não começou. A publicação já grava linhas no outbox transacional, mas elas permanecem em `PENDING` porque nenhum relay as consome ainda (#18). O cache com Caffeine e Redis (#19), o SDK Java e o provider OpenFeature (#20) e os benchmarks reprodutíveis (#21) seguem abertos.
 
-O acesso de operador (#47) está parcialmente entregue e não pertence a nenhum marco. A autenticação humana e os endpoints de organização, projeto e ambiente existem; os de feature flag e credencial de SDK não, de modo que esses recursos ainda nascem na camada de serviço e a plataforma ainda não é autossuficiente ponta a ponta.
+O acesso de operador (#47) está entregue e não pertence a nenhum marco. Um operador consegue autenticar, criar organização, projeto, ambiente e feature flag tipada, publicar o ambiente, emitir credencial de SDK e avaliar — somente por HTTP, o que um teste ponta a ponta exercita.
 
 ## Início rápido
 
@@ -626,6 +654,34 @@ curl -X POST localhost:8080/api/v1/projects/$PROJECT_ID/environments \
   -H 'Content-Type: application/json' \
   -d '{"key":"production","displayName":"Production"}'
 ```
+
+### Publicar uma flag e avaliá-la
+
+Crie uma flag tipada, publique o ambiente, emita uma credencial de SDK e avalie. O `valueType` declarado decide qual campo da variante é lido, de modo que um valor nunca é coagido entre tipos:
+
+```bash
+curl -X POST localhost:8080/api/v1/projects/$PROJECT_ID/flags \
+  -H "Authorization: Bearer $TOKEN" -H 'X-FlagForge-Organization: acme' \
+  -H 'Content-Type: application/json' \
+  -d '{"key":"checkout-v2","displayName":"Checkout v2","ownerId":"squad-checkout",
+       "valueType":"BOOLEAN","lifecycleType":"OPERATIONAL","defaultVariantKey":"enabled",
+       "variants":[{"key":"disabled","booleanValue":false},
+                   {"key":"enabled","booleanValue":true}]}'
+
+curl -X POST localhost:8080/api/v1/environments/$ENVIRONMENT_ID/publication \
+  -H "Authorization: Bearer $TOKEN" -H 'X-FlagForge-Organization: acme' \
+  -H 'Content-Type: application/json' -d '{"expectedVersion":0}'
+
+SDK_KEY=$(curl -s -X POST localhost:8080/api/v1/environments/$ENVIRONMENT_ID/sdk-credentials \
+  -H "Authorization: Bearer $TOKEN" -H 'X-FlagForge-Organization: acme' \
+  -H 'Content-Type: application/json' -d '{"name":"production-server"}' | jq -r .plaintext)
+
+curl -X POST localhost:8080/api/v1/evaluate/checkout-v2 \
+  -H "Authorization: Bearer $SDK_KEY" -H 'Content-Type: application/json' \
+  -d '{"type":"BOOLEAN","defaultValue":false,"targetingKey":"customer-492"}'
+```
+
+O texto plano da credencial de SDK é retornado apenas na criação e na rotação; o banco guarda um hash. Se você perdê-lo, o caminho é rotacionar, não relê-lo.
 
 O perfil `dev` assina token para qualquer ator solicitado, então ele existe apenas sob esse perfil e nunca deve ser habilitado em um ambiente implantado. O contrato está em [`docs/openapi/control-api.yaml`](docs/openapi/control-api.yaml).
 

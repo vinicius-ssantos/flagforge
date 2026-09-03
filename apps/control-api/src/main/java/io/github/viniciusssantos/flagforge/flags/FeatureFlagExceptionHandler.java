@@ -1,6 +1,10 @@
-package io.github.viniciusssantos.flagforge.tenancy;
+package io.github.viniciusssantos.flagforge.flags;
 
 import java.net.URI;
+
+import io.github.viniciusssantos.flagforge.flags.FeatureFlagService.FlagValidationException;
+import io.github.viniciusssantos.flagforge.flags.FeatureFlagService.ValidationCode;
+import io.github.viniciusssantos.flagforge.tenancy.TenantAccessException;
 
 import jakarta.servlet.http.HttpServletRequest;
 
@@ -11,22 +15,26 @@ import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
-@RestControllerAdvice(assignableTypes = {
-        OrganizationController.class,
-        ProjectController.class,
-        EnvironmentController.class,
-        MembershipController.class
-})
-final class TenancyExceptionHandler {
+@RestControllerAdvice(assignableTypes = FeatureFlagController.class)
+final class FeatureFlagExceptionHandler {
 
     private static final String CORRELATION_ATTRIBUTE = "flagforge.correlation-id";
 
-    /**
-     * Maps tenant access failures without revealing which resources exist.
-     *
-     * <p>A resource owned by another organization produces the same 404 as one that does not exist,
-     * so a caller cannot enumerate tenants by comparing responses.
-     */
+    @ExceptionHandler(FlagValidationException.class)
+    ResponseEntity<ProblemDetail> handleValidation(
+            FlagValidationException exception,
+            HttpServletRequest request) {
+        HttpStatus status = statusFor(exception.code());
+        ProblemDetail problem = problem(
+                status,
+                "Invalid feature flag request",
+                "urn:flagforge:problem:invalid-flag-request",
+                exception.getMessage(),
+                request);
+        problem.setProperty("errorCode", exception.code().name());
+        return ResponseEntity.status(status).body(problem);
+    }
+
     @ExceptionHandler(TenantAccessException.class)
     ResponseEntity<ProblemDetail> handleTenantAccess(
             TenantAccessException exception,
@@ -37,62 +45,50 @@ final class TenancyExceptionHandler {
                     "Authentication required",
                     "urn:flagforge:problem:authentication-required",
                     "Authentication is required to access this resource.",
-                    exception.reason().name(),
+                    exception,
                     request);
             case ACCESS_DENIED -> respond(
                     HttpStatus.FORBIDDEN,
                     "Access denied",
                     "urn:flagforge:problem:access-denied",
                     "The authenticated principal is not allowed to access this resource.",
-                    exception.reason().name(),
+                    exception,
                     request);
             case RESOURCE_NOT_FOUND -> respond(
                     HttpStatus.NOT_FOUND,
                     "Resource not found",
                     "urn:flagforge:problem:resource-not-found",
                     "Resource not found",
-                    exception.reason().name(),
+                    exception,
                     request);
         };
-    }
-
-    @ExceptionHandler(IllegalArgumentException.class)
-    ResponseEntity<ProblemDetail> handleInvalidArgument(
-            IllegalArgumentException exception,
-            HttpServletRequest request) {
-        return respond(
-                HttpStatus.BAD_REQUEST,
-                "Invalid tenant request",
-                "urn:flagforge:problem:invalid-tenant-request",
-                exception.getMessage(),
-                "INVALID_TENANT_REQUEST",
-                request);
-    }
-
-    @ExceptionHandler(IllegalStateException.class)
-    ResponseEntity<ProblemDetail> handleConflict(
-            IllegalStateException exception,
-            HttpServletRequest request) {
-        return respond(
-                HttpStatus.CONFLICT,
-                "Tenant state conflict",
-                "urn:flagforge:problem:tenant-state-conflict",
-                exception.getMessage(),
-                "TENANT_STATE_CONFLICT",
-                request);
     }
 
     @ExceptionHandler(HttpMessageNotReadableException.class)
     ResponseEntity<ProblemDetail> handleUnreadableRequest(
             HttpMessageNotReadableException exception,
             HttpServletRequest request) {
-        return respond(
+        ProblemDetail problem = problem(
                 HttpStatus.BAD_REQUEST,
-                "Invalid tenant request",
-                "urn:flagforge:problem:invalid-tenant-request",
+                "Invalid feature flag request",
+                "urn:flagforge:problem:invalid-flag-request",
                 "Request body is malformed or incomplete",
-                "INVALID_TENANT_REQUEST",
                 request);
+        problem.setProperty("errorCode", ValidationCode.INVALID_TEXT.name());
+        return ResponseEntity.badRequest().body(problem);
+    }
+
+    /**
+     * A duplicate key is a conflict; everything else the domain rejects is a bad request.
+     *
+     * <p>Concurrent modification is also a conflict, so a caller can distinguish "your input is
+     * wrong" from "retry with fresh state".
+     */
+    private static HttpStatus statusFor(ValidationCode code) {
+        return switch (code) {
+            case FLAG_KEY_ALREADY_EXISTS, CONCURRENT_MODIFICATION -> HttpStatus.CONFLICT;
+            default -> HttpStatus.BAD_REQUEST;
+        };
     }
 
     private static ResponseEntity<ProblemDetail> respond(
@@ -100,14 +96,24 @@ final class TenancyExceptionHandler {
             String title,
             String type,
             String detail,
-            String errorCode,
+            TenantAccessException exception,
+            HttpServletRequest request) {
+        ProblemDetail problem = problem(status, title, type, detail, request);
+        problem.setProperty("errorCode", exception.reason().name());
+        return ResponseEntity.status(status).body(problem);
+    }
+
+    private static ProblemDetail problem(
+            HttpStatus status,
+            String title,
+            String type,
+            String detail,
             HttpServletRequest request) {
         ProblemDetail problem = ProblemDetail.forStatusAndDetail(status, detail);
         problem.setTitle(title);
         problem.setType(URI.create(type));
         problem.setInstance(URI.create(request.getRequestURI()));
         problem.setProperty("correlationId", request.getAttribute(CORRELATION_ATTRIBUTE));
-        problem.setProperty("errorCode", errorCode);
-        return ResponseEntity.status(status).body(problem);
+        return problem;
     }
 }
