@@ -2,7 +2,6 @@ package io.github.viniciusssantos.flagforge.distribution;
 
 import java.sql.Timestamp;
 
-import io.github.viniciusssantos.flagforge.distribution.internal.ConfigurationEventRecorded;
 import io.github.viniciusssantos.flagforge.distribution.internal.OutboxRepository;
 
 import org.springframework.context.ApplicationEventPublisher;
@@ -43,6 +42,6 @@ public class ConfigurationEventOutbox {
     @Transactional(propagation = Propagation.MANDATORY)
     public void record(PublishedConfigurationEvent event) {
         outboxRepository.insertPending(event, Timestamp.from(event.occurredAt()));
-        applicationEventPublisher.publishEvent(new ConfigurationEventRecorded());
+        applicationEventPublisher.publishEvent(new ConfigurationEventRecorded(event));
     }
 }

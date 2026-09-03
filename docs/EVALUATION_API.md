@@ -139,7 +139,7 @@ stale = true
 configurationVersion = version actually served
 ```
 
-The current PostgreSQL provider reports `stale = false`. This contract is defined now so cache and failure-recovery work can be added without an API-breaking change.
+An in-process cache serves a last-known-good document when PostgreSQL is unreachable, within a configured staleness budget (`flagforge.evaluation.cache.staleness-budget`). Past that budget the failure is surfaced as `SNAPSHOT_UNAVAILABLE` instead: an answer nobody can date is worse than an explicit error. A cache hit for the current version is never stale, because a cached document only ever answers for the version the pointer names.
 
 ## Privacy and telemetry
 
@@ -318,7 +318,7 @@ stale = true
 configurationVersion = versão efetivamente servida
 ```
 
-O provider atual em PostgreSQL reporta `stale = false`. Esse contrato é definido agora para que o trabalho de cache e de recuperação de falhas possa ser adicionado sem quebrar a API.
+Um cache em processo serve o documento de último estado bom conhecido quando o PostgreSQL está inalcançável, dentro de um orçamento configurado de defasagem (`flagforge.evaluation.cache.staleness-budget`). Passado esse orçamento, a falha é exposta como `SNAPSHOT_UNAVAILABLE`: uma resposta que ninguém consegue datar é pior que um erro explícito. Um acerto de cache na versão corrente nunca é defasado, porque um documento em cache só responde pela versão que o ponteiro nomeia.
 
 ## Privacidade e telemetria
 
