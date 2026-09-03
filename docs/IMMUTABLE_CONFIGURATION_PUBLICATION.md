@@ -104,10 +104,19 @@ delivery status must advance through the relay lifecycle.
 
 ## Outbox scope
 
-Publication inserts one `CONFIGURATION_PUBLISHED` outbox record in the same
-transaction as the revision and pointer. The relay, retries, deduplication, and
-external cache/distribution behavior are delivered separately by issue #18.
-Until then, events remain safely persisted with status `PENDING`.
+Publication records one `CONFIGURATION_PUBLISHED` event in the same transaction as the
+revision and pointer. The `distribution` module owns that outbox; publication reaches it
+through `ConfigurationEventOutbox`, whose `MANDATORY` propagation makes recording an event
+outside the publishing transaction fail rather than succeed silently (ADR 0008).
+
+A relay claims events with `FOR UPDATE SKIP LOCKED`, delivers them to in-process
+listeners, and marks them `DELIVERED`. Delivery is at least once, so listeners must be
+idempotent and must compare versions instead of trusting arrival order. A listener failure
+returns the event to `PENDING` with an incremented attempt count and an exponential
+backoff; after the configured maximum it becomes `FAILED` and is no longer claimed.
+
+Distribution failures never reach publication: a revision, its snapshot, and the current
+pointer are already committed and stay untouched no matter how delivery goes.
 
 ## Concurrency scope
 
@@ -244,10 +253,19 @@ porque seu status de entrega precisa avançar pelo ciclo de vida do relay.
 
 ## Escopo do outbox
 
-A publicação insere um registro de outbox `CONFIGURATION_PUBLISHED` na mesma
-transação da revisão e do ponteiro. O relay, as retentativas, a deduplicação e o
-comportamento externo de cache/distribuição são entregues separadamente pela issue #18.
-Até lá, os eventos permanecem persistidos com segurança no status `PENDING`.
+A publicação registra um evento `CONFIGURATION_PUBLISHED` na mesma transação da revisão e
+do ponteiro. O módulo `distribution` possui esse outbox; a publicação chega até ele por
+`ConfigurationEventOutbox`, cuja propagação `MANDATORY` faz com que registrar um evento
+fora da transação de publicação falhe, em vez de suceder silenciosamente (ADR 0008).
+
+Um relay reivindica eventos com `FOR UPDATE SKIP LOCKED`, entrega-os a listeners em
+processo e os marca como `DELIVERED`. A entrega é ao menos uma vez, então os listeners
+precisam ser idempotentes e comparar versões, em vez de confiar na ordem de chegada. Uma
+falha de listener devolve o evento a `PENDING`, com a contagem de tentativas incrementada e
+backoff exponencial; após o máximo configurado, ele vira `FAILED` e deixa de ser reivindicado.
+
+Falhas de distribuição nunca alcançam a publicação: a revisão, seu snapshot e o ponteiro
+atual já estão confirmados e permanecem intactos, independentemente do que aconteça na entrega.
 
 ## Escopo de concorrência
 

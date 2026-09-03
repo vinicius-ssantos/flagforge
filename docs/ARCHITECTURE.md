@@ -50,7 +50,7 @@ Optimized for predictable reads:
 | targeting | Rules, segments, operators, dependency validation | rules, segments |
 | publishing | Draft validation, revisions, snapshots | revisions, snapshots, change requests |
 | evaluation | Deterministic evaluation engine and reason model | evaluation contracts, no authoritative config |
-| distribution | Outbox relay, invalidation, version reconciliation | outbox and delivery state |
+| distribution | Outbox relay and delivery guarantees; invalidation and reconciliation follow | outbox and delivery state (publishing records events through its public contract, ADR 0008) |
 | rollout | Scheduled progression, pause, resume, rollback policy | rollout plans and steps |
 | audit | Append-only security and configuration history | audit events |
 
@@ -255,7 +255,7 @@ Otimizado para leituras previsíveis:
 | targeting | Regras, segmentos, operadores, validação de dependências | regras, segmentos |
 | publishing | Validação de rascunho, revisões, snapshots | revisões, snapshots, solicitações de mudança |
 | evaluation | Motor de avaliação determinístico e modelo de razões | contratos de avaliação, nenhuma configuração autoritativa |
-| distribution | Relay do outbox, invalidação, reconciliação de versões | outbox e estado de entrega |
+| distribution | Relay do outbox e garantias de entrega; invalidação e reconciliação vêm depois | outbox e estado de entrega (o publishing registra eventos pelo contrato público, ADR 0008) |
 | rollout | Progressão agendada, pausa, retomada, política de rollback | planos e etapas de rollout |
 | audit | Histórico somente-acréscimo de segurança e configuração | eventos de auditoria |
 
