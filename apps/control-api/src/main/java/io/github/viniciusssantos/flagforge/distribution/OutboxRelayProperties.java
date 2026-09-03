@@ -7,6 +7,10 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 /**
  * Tuning for the delivery relay.
  *
+ * @param enabled      whether this instance runs the relay at all. Delivery is safe to run
+ *                     everywhere, but an operator may want it off on a node, and tests turn it off
+ *                     to drive the relay explicitly. Read by {@code @ConditionalOnProperty}, and
+ *                     declared here so the switch is visible to anyone reading the configuration.
  * @param pollInterval how often the recovery poll runs. Delivery latency normally comes from the
  *                     post-commit trigger, so this only bounds how long a missed trigger can delay
  *                     an event.
@@ -19,6 +23,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  */
 @ConfigurationProperties(prefix = "flagforge.distribution.relay")
 public record OutboxRelayProperties(
+        boolean enabled,
         Duration pollInterval,
         int batchSize,
         int maxAttempts,

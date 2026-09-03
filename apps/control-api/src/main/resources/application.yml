@@ -85,6 +85,7 @@ management:
 flagforge:
   distribution:
     relay:
+      enabled: ${FLAGFORGE_RELAY_ENABLED:true}
       poll-interval: ${FLAGFORGE_RELAY_POLL_INTERVAL:5s}
       batch-size: ${FLAGFORGE_RELAY_BATCH_SIZE:100}
       max-attempts: ${FLAGFORGE_RELAY_MAX_ATTEMPTS:8}

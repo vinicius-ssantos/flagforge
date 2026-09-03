@@ -9,6 +9,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class OutboxRelayPropertiesTests {
 
     private final OutboxRelayProperties properties = new OutboxRelayProperties(
+            true,
             Duration.ofSeconds(5),
             100,
             8,
@@ -36,7 +37,7 @@ class OutboxRelayPropertiesTests {
 
     @Test
     void fallsBackToSafeDefaultsWhenUnconfigured() {
-        OutboxRelayProperties defaults = new OutboxRelayProperties(null, 0, 0, null, null);
+        OutboxRelayProperties defaults = new OutboxRelayProperties(true, null, 0, 0, null, null);
 
         assertThat(defaults.pollInterval()).isEqualTo(Duration.ofSeconds(5));
         assertThat(defaults.batchSize()).isEqualTo(100);
